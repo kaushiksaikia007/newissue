@@ -67,6 +67,18 @@ $pdo->exec("CREATE TABLE IF NOT EXISTS trades (
     INDEX idx_tr_inst (instrument),
     INDEX idx_tr_closed (closed_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+$pdo->exec("CREATE TABLE IF NOT EXISTS alerts (
+    id VARCHAR(40) PRIMARY KEY,
+    instrument VARCHAR(16) NOT NULL,
+    email VARCHAR(190) NOT NULL,
+    threshold DOUBLE NOT NULL,
+    direction VARCHAR(8) NOT NULL,
+    created_at BIGINT NOT NULL,
+    triggered TINYINT NOT NULL DEFAULT 0,
+    triggered_at BIGINT NULL,
+    INDEX idx_al_active (triggered)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 } catch (Throwable $e) {
     http_response_code(500);
     header('Content-Type: application/json');

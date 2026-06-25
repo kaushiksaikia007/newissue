@@ -19,6 +19,8 @@ export interface InstrumentConfig {
   strategyEndpoint?: string;
   /** Optional: enable the paper-trading desk. */
   paperTrading?: boolean;
+  /** Instrument id for the AI brain chat. */
+  brainId?: "gold" | "nifty";
 }
 
 export const GOLD_CONFIG: InstrumentConfig = {
@@ -36,6 +38,7 @@ export const GOLD_CONFIG: InstrumentConfig = {
     news: "/api/news",
   },
   strategyEndpoint: "/api/strategy",
+  brainId: "gold",
 };
 
 export const NIFTY_CONFIG: InstrumentConfig = {
@@ -55,4 +58,5 @@ export const NIFTY_CONFIG: InstrumentConfig = {
   },
   strategyEndpoint: "/api/nifty/strategy",
   paperTrading: true,
+  brainId: "nifty",
 };

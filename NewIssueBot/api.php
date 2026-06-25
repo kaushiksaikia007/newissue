@@ -110,6 +110,50 @@ try {
         }
         $pdo->commit();
         echo json_encode(state($pdo, $inst));
+    } elseif ($action === 'alert_add') {
+        $id = $body['id'] ?? uniqid('a', true);
+        $email = trim((string)($body['email'] ?? ''));
+        $threshold = (float)($body['threshold'] ?? 0);
+        $dir = ($body['direction'] ?? 'above') === 'below' ? 'below' : 'above';
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL) || $threshold <= 0) {
+            http_response_code(400);
+            echo json_encode(['error' => 'invalid_alert']);
+        } else {
+            $pdo->prepare('INSERT INTO alerts(id,instrument,email,threshold,direction,created_at,triggered)
+                VALUES(?,?,?,?,?,?,0)')
+                ->execute([$id, $inst, $email, $threshold, $dir, round(microtime(true) * 1000)]);
+            echo json_encode(['ok' => true, 'id' => $id]);
+        }
+    } elseif ($action === 'alert_active') {
+        $rows = $pdo->query('SELECT * FROM alerts WHERE triggered=0')->fetchAll();
+        $alerts = array_map(function ($r) {
+            return ['id' => $r['id'], 'instrument' => $r['instrument'], 'email' => $r['email'],
+                'threshold' => (float)$r['threshold'], 'direction' => $r['direction']];
+        }, $rows);
+        echo json_encode(['alerts' => $alerts]);
+    } elseif ($action === 'alert_trigger') {
+        $id = (string)($body['id'] ?? '');
+        $price = (float)($body['price'] ?? 0);
+        $s = $pdo->prepare('SELECT * FROM alerts WHERE id=? AND triggered=0');
+        $s->execute([$id]);
+        $a = $s->fetch();
+        if ($a) {
+            $name = $a['instrument'] === 'gold' ? 'Gold' : 'Nifty 50';
+            $dir = $a['direction'] === 'above' ? 'risen above' : 'dropped below';
+            $subject = "New Issue Bot alert: $name has $dir " . $a['threshold'];
+            $msg = "Your $name price alert has triggered.\n\n"
+                . "$name is now $price.\n"
+                . "It has $dir your alert level of " . $a['threshold'] . ".\n\n"
+                . "— New Issue Bot";
+            $headers = "From: New Issue Bot <alerts@puthibharal.com>\r\n"
+                . "Content-Type: text/plain; charset=utf-8\r\n";
+            @mail($a['email'], $subject, $msg, $headers);
+            $pdo->prepare('UPDATE alerts SET triggered=1, triggered_at=? WHERE id=?')
+                ->execute([round(microtime(true) * 1000), $id]);
+            echo json_encode(['ok' => true]);
+        } else {
+            echo json_encode(['ok' => false]);
+        }
     } else {
         http_response_code(400);
         echo json_encode(['error' => 'unknown_action']);

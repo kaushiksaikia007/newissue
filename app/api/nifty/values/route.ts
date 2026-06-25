@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { allNiftyMock, getNiftyData } from "@/lib/instruments/nifty";
+import { ensureAlertMonitor } from "@/lib/alerts";
 import type { ValuesResponse } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  ensureAlertMonitor();
   let data: ValuesResponse;
   try {
     const { metrics, index, usingMockData } = await getNiftyData();

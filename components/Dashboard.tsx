@@ -8,6 +8,7 @@ import MetricCard from "./MetricCard";
 import SignalHero from "./SignalHero";
 import NewsFeed from "./NewsFeed";
 import StrategyPanel from "./StrategyPanel";
+import BrainChat from "./BrainChat";
 
 const VALUES_MS = 1_000; // live values: every second
 const SIGNAL_MS = 60_000; // recommendation: every 60 seconds
@@ -245,6 +246,8 @@ export default function Dashboard({ cfg }: { cfg: InstrumentConfig }) {
           </div>
         </>
       )}
+
+      {cfg.brainId && <BrainChat instrument={cfg.brainId} label={cfg.title} />}
     </div>
   );
 }

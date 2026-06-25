@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getMetrics } from "@/lib/macro";
 import { allMockMetrics, mockMetric } from "@/lib/fred";
+import { ensureAlertMonitor } from "@/lib/alerts";
 import type { ValuesResponse } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -8,6 +9,7 @@ export const dynamic = "force-dynamic";
 // Fast lane: live market values. getMetrics() caches TradingView data for
 // ~VALUES_CACHE_MS (default 1s), so polling this every second is cheap.
 export async function GET() {
+  ensureAlertMonitor();
   let data: ValuesResponse;
   try {
     const { metrics, gold, usingMockData } = await getMetrics();
