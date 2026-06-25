@@ -83,7 +83,7 @@ cp .env.local.example .env.local   # then add your FRED_API_KEY
 npm run dev
 ```
 
-Open http://localhost:3000.
+Open https://newissue.vercel.app/.
 
 Get a **free** FRED API key (takes ~1 minute):
 https://fredaccount.stlouisfed.org/apikeys
