@@ -56,7 +56,7 @@ inflation/Fed/dollar dominate the long-term view):
 | --- | --- |
 | **1 Day** | Next 24 hours |
 | **Short-term** | 1–4 weeks |
-| **Long-term** | 6–12 months |
+| **Long-term** | More than 1 month |
 
 For each horizon, the seven scores are **averaged (0–10)** and mapped to a
 recommendation:

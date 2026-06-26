@@ -45,7 +45,7 @@ interface StrategyData {
 const HORIZONS = [
   { id: "intraday", label: "Intraday" },
   { id: "short", label: "Short (1-4w)" },
-  { id: "long", label: "Long (1-12m)" },
+  { id: "long", label: "Long (>1m)" },
 ];
 
 const verdictColor: Record<Verdict, string> = {

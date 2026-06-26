@@ -65,7 +65,7 @@ interface Extra {
 const HLABEL: Record<Horizon, string> = {
   intraday: "Intraday",
   short: "Short Term (1-4 weeks)",
-  long: "Long Term (1-12 months)",
+  long: "Long Term (more than 1 month)",
 };
 
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useAuth } from "./AuthProvider";
 
 interface Msg {
   role: "user" | "assistant";
@@ -14,6 +15,7 @@ export default function BrainChat({
   instrument: "gold" | "nifty";
   label: string;
 }) {
+  const { getToken } = useAuth();
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<Msg[]>([
     {
@@ -52,6 +54,7 @@ export default function BrainChat({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           instrument,
+          session: getToken(),
           messages: next.filter((m, i) => !(i === 0 && m.role === "assistant")),
         }),
       }).then((res) => res.json());

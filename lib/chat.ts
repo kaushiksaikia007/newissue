@@ -54,6 +54,7 @@ async function context(instrument: Inst) {
 export async function answerChat(
   instrument: Inst,
   messages: ChatMessage[],
+  userEmail?: string | null,
 ): Promise<{ reply: string }> {
   const key = process.env.OPENAI_API_KEY;
   const name = instrument === "gold" ? "Gold" : "Nifty 50";
@@ -73,15 +74,14 @@ export async function answerChat(
       type: "function" as const,
       function: {
         name: "set_price_alert",
-        description: `Create an email price alert for ${name}. Use whenever the user asks to be alerted/notified/emailed when the ${name} price reaches, crosses, goes above, or drops below a level. The user MUST give an email address — if they have not, do NOT call this; ask them for their email first.`,
+        description: `Create an email price alert for ${name}. Use whenever the user asks to be alerted/notified/emailed when the ${name} price reaches, crosses, goes above, or drops below a level. The alert is automatically sent to the signed-in user's registered email — never ask the user for an email address.`,
         parameters: {
           type: "object",
           properties: {
             threshold: { type: "number", description: `the ${name} price level to watch (${unit})` },
             direction: { type: "string", enum: ["above", "below"], description: "fire when price goes above or below the threshold" },
-            email: { type: "string", description: "the user's email address" },
           },
-          required: ["threshold", "direction", "email"],
+          required: ["threshold", "direction"],
         },
       },
     },
@@ -96,6 +96,7 @@ How to answer:
 - Very simple, plain English. Short and to the point. No fluff, no filler, no disclaimers, no markdown headings.
 - Prefer 1-4 short sentences or a tight bullet list. Quote live numbers when useful.
 - If you genuinely don't have a figure, say so — never invent data.
+- If the user asks for a price alert, call set_price_alert with just the level and direction. It goes to their registered email automatically — never ask them for an email address.
 - If the user asks about anything not related to ${name}, briefly say you only cover ${name} and steer back.`;
 
   const trimmed = messages
@@ -124,18 +125,23 @@ How to answer:
     }>;
     const call = calls.find((c) => c.function?.name === "set_price_alert");
     if (call) {
-      let args: { threshold?: number; direction?: string; email?: string } = {};
+      let args: { threshold?: number; direction?: string } = {};
       try {
         args = JSON.parse(call.function?.arguments || "{}");
       } catch {
         /* ignore */
       }
       const threshold = Number(args.threshold);
-      const email = String(args.email ?? "").trim();
+      const email = String(userEmail ?? "").trim();
       const emailOk = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email);
-      if (!emailOk || !Number.isFinite(threshold) || threshold <= 0) {
+      if (!emailOk) {
         return {
-          reply: "To set that alert I need a valid email and a price level — what email should I send it to?",
+          reply: "Please sign in so I can send the alert to your registered email address.",
+        };
+      }
+      if (!Number.isFinite(threshold) || threshold <= 0) {
+        return {
+          reply: "What price level should I set the alert at?",
         };
       }
       // Derive direction from the live price when we have it (most reliable).

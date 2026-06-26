@@ -25,6 +25,8 @@ interface AuthResponse {
 interface AuthContextValue {
   user: User | null;
   ready: boolean;
+  /** Current session token, if signed in (for authenticated API calls). */
+  getToken: () => string | null;
   /** Returns true if signed in; otherwise opens the auth popup and returns false. */
   requireAuth: () => boolean;
   openAuth: () => void;
@@ -99,6 +101,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const openAuth = useCallback(() => setOpen(true), []);
   const closeAuth = useCallback(() => setOpen(false), []);
+  const getToken = useCallback(
+    () => (typeof window !== "undefined" ? localStorage.getItem(TOKEN_KEY) : null),
+    [],
+  );
 
   const requireAuth = useCallback(() => {
     if (user) return true;
@@ -156,6 +162,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       value={{
         user,
         ready,
+        getToken,
         requireAuth,
         openAuth,
         closeAuth,

@@ -24,7 +24,7 @@ export const FACTORS: { id: string; label: string }[] = [
 export const HORIZONS: { id: HorizonId; label: string; timeframe: string }[] = [
   { id: "intraday", label: "1 Day", timeframe: "Next 24 hours" },
   { id: "short", label: "Short-term", timeframe: "1–4 weeks" },
-  { id: "long", label: "Long-term", timeframe: "6–12 months" },
+  { id: "long", label: "Long-term", timeframe: "More than 1 month" },
 ];
 
 export function horizonMeta(id: HorizonId) {
