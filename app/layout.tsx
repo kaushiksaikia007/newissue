@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import Sidebar from "@/components/Sidebar";
+import { TabProvider } from "@/components/TabProvider";
+import { AuthProvider } from "@/components/AuthProvider";
 
 export const metadata: Metadata = {
   title: "New Issue Bot — Markets Terminal",
@@ -16,10 +18,14 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <div className="app-shell">
-          <Sidebar />
-          <main className="app-main">{children}</main>
-        </div>
+        <AuthProvider>
+          <TabProvider>
+            <div className="app-shell">
+              <Sidebar />
+              <main className="app-main">{children}</main>
+            </div>
+          </TabProvider>
+        </AuthProvider>
       </body>
     </html>
   );

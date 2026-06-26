@@ -23,8 +23,9 @@ function cacheMs(): number {
   return (Number.isFinite(s) && s > 0 ? s : 60) * 1000;
 }
 
-export async function GET() {
-  if (cache && cache.expires > Date.now()) {
+export async function GET(req: Request) {
+  const fresh = new URL(req.url).searchParams.get("fresh") === "1";
+  if (!fresh && cache && cache.expires > Date.now()) {
     return NextResponse.json(cache.data);
   }
 

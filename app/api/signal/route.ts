@@ -23,10 +23,11 @@ function cacheMs(): number {
   return (Number.isFinite(s) && s > 0 ? s : 60) * 1000;
 }
 
-// Slow lane: the OpenAI recommendation. Recomputed at most once per
-// SIGNAL_CACHE_SECONDS (default 60s), regardless of how often clients poll.
-export async function GET() {
-  if (cache && cache.expires > Date.now()) {
+// The OpenAI recommendation — analysed on demand. `?fresh=1` forces a brand-new
+// analysis; otherwise a recent cached result (<= SIGNAL_CACHE_SECONDS) is reused.
+export async function GET(req: Request) {
+  const fresh = new URL(req.url).searchParams.get("fresh") === "1";
+  if (!fresh && cache && cache.expires > Date.now()) {
     return NextResponse.json(cache.data);
   }
 

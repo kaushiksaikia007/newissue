@@ -79,6 +79,31 @@ $pdo->exec("CREATE TABLE IF NOT EXISTS alerts (
     triggered_at BIGINT NULL,
     INDEX idx_al_active (triggered)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+// --- Authentication (registered users, e-mail OTP signup, sessions) ---
+$pdo->exec("CREATE TABLE IF NOT EXISTS users (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(120) NOT NULL,
+    email VARCHAR(190) NOT NULL UNIQUE,
+    pass_hash VARCHAR(255) NOT NULL,
+    created_at BIGINT NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+$pdo->exec("CREATE TABLE IF NOT EXISTS pending_signups (
+    email VARCHAR(190) PRIMARY KEY,
+    name VARCHAR(120) NOT NULL,
+    pass_hash VARCHAR(255) NOT NULL,
+    otp VARCHAR(6) NOT NULL,
+    expires_at BIGINT NOT NULL,
+    attempts INT NOT NULL DEFAULT 0
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+$pdo->exec("CREATE TABLE IF NOT EXISTS sessions (
+    token VARCHAR(64) PRIMARY KEY,
+    user_id INT NOT NULL,
+    created_at BIGINT NOT NULL,
+    INDEX idx_sess_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 } catch (Throwable $e) {
     http_response_code(500);
     header('Content-Type: application/json');

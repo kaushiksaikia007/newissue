@@ -4,27 +4,34 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type { GoldSignal, NewsItem, ValuesResponse } from "@/lib/types";
 import type { InstrumentConfig } from "@/lib/instruments/config";
+import { timeAgo } from "@/lib/format";
 import MetricCard from "./MetricCard";
 import SignalHero from "./SignalHero";
 import NewsFeed from "./NewsFeed";
 import StrategyPanel from "./StrategyPanel";
 import BrainChat from "./BrainChat";
+import { useAuth } from "./AuthProvider";
 
 const VALUES_MS = 1_000; // live values: every second
-const SIGNAL_MS = 60_000; // recommendation: every 60 seconds
 const NEWS_MS = 60_000;
 const MAX_POINTS = 240; // rolling chart buffer
 
+const clock = (iso: string) => {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "" : d.toLocaleTimeString();
+};
+
 export default function Dashboard({ cfg }: { cfg: InstrumentConfig }) {
+  const { requireAuth } = useAuth();
   const [values, setValues] = useState<ValuesResponse | null>(null);
   const [signals, setSignals] = useState<GoldSignal[]>([]);
   const [news, setNews] = useState<NewsItem[]>([]);
   const [history, setHistory] = useState<number[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [nextSignalIn, setNextSignalIn] = useState<number>(SIGNAL_MS / 1000);
+  const [signalsAt, setSignalsAt] = useState<string | null>(null);
+  const [signalLoading, setSignalLoading] = useState(false);
   const [alerts, setAlerts] = useState<boolean>(false);
 
-  const lastSignalAt = useRef<number>(Date.now());
   const prevRec = useRef<Record<string, string>>({});
   const alertsRef = useRef<boolean>(false);
   const alertStoreKey = `${cfg.alertKey}-alerts`;
@@ -93,10 +100,13 @@ export default function Dashboard({ cfg }: { cfg: InstrumentConfig }) {
   }, [cfg.endpoints.values]);
 
   const loadSignal = useCallback(async () => {
+    if (!requireAuth()) return;
+    setSignalLoading(true);
+    setError(null);
     try {
-      const res = await fetch(cfg.endpoints.signal, { cache: "no-store" }).then(
-        (r) => r.json(),
-      );
+      const res = await fetch(`${cfg.endpoints.signal}?fresh=1`, {
+        cache: "no-store",
+      }).then((r) => r.json());
       const list: GoldSignal[] = res.signals ?? [];
       for (const s of list) {
         const prev = prevRec.current[s.horizon];
@@ -105,12 +115,16 @@ export default function Dashboard({ cfg }: { cfg: InstrumentConfig }) {
         }
         prevRec.current[s.horizon] = s.recommendation;
       }
-      if (list.length) setSignals(list);
-      lastSignalAt.current = Date.now();
+      if (list.length) {
+        setSignals(list);
+        setSignalsAt(res.fetchedAt ?? new Date().toISOString());
+      }
     } catch {
-      /* keep previous signals */
+      setError("Analysis failed — please try again.");
+    } finally {
+      setSignalLoading(false);
     }
-  }, [cfg.endpoints.signal, notify]);
+  }, [cfg.endpoints.signal, notify, requireAuth]);
 
   const loadNews = useCallback(async () => {
     try {
@@ -124,9 +138,11 @@ export default function Dashboard({ cfg }: { cfg: InstrumentConfig }) {
   }, [cfg.endpoints.news]);
 
   useEffect(() => {
-    // Reset state when switching instruments.
+    // Reset state when switching instruments. Recommendation is manual now —
+    // it only runs when the user clicks "Analyze".
     setValues(null);
     setSignals([]);
+    setSignalsAt(null);
     setHistory([]);
     prevRec.current = {};
 
@@ -139,22 +155,14 @@ export default function Dashboard({ cfg }: { cfg: InstrumentConfig }) {
     }
 
     loadValues();
-    loadSignal();
     loadNews();
     const v = setInterval(loadValues, VALUES_MS);
-    const s = setInterval(loadSignal, SIGNAL_MS);
     const n = setInterval(loadNews, NEWS_MS);
-    const tick = setInterval(() => {
-      const elapsed = (Date.now() - lastSignalAt.current) / 1000;
-      setNextSignalIn(Math.max(0, Math.round(SIGNAL_MS / 1000 - elapsed)));
-    }, 1000);
     return () => {
       clearInterval(v);
-      clearInterval(s);
       clearInterval(n);
-      clearInterval(tick);
     };
-  }, [loadValues, loadSignal, loadNews, alertStoreKey]);
+  }, [loadValues, loadNews, alertStoreKey]);
 
   return (
     <div className="wrap">
@@ -168,7 +176,13 @@ export default function Dashboard({ cfg }: { cfg: InstrumentConfig }) {
         </div>
         <div className="status">
           <div className="status-actions">
-            <Link href="/paper" className="topbar-btn">
+            <Link
+              href="/paper"
+              className="topbar-btn"
+              onClick={(e) => {
+                if (!requireAuth()) e.preventDefault();
+              }}
+            >
               💹 Paper Trading
             </Link>
             <button
@@ -186,9 +200,7 @@ export default function Dashboard({ cfg }: { cfg: InstrumentConfig }) {
               >
                 {values.usingMockData ? "Demo Data" : "● Live"}
               </span>
-              <div style={{ marginTop: 6 }}>
-                Values stream live · next AI analysis in {nextSignalIn}s
-              </div>
+              <div style={{ marginTop: 6 }}>Live prices stream every second</div>
             </>
           ) : (
             <span className="badge mock">Loading…</span>
@@ -202,6 +214,28 @@ export default function Dashboard({ cfg }: { cfg: InstrumentConfig }) {
         <div className="spin">Loading live data…</div>
       ) : (
         <>
+          <div className="analyze-bar">
+            <div className="analyze-meta">
+              <span className="analyze-title">AI Market Recommendation</span>
+              <span className="analyze-time">
+                {signalsAt
+                  ? `Last analyzed ${timeAgo(signalsAt)} · ${clock(signalsAt)}`
+                  : "Not analyzed yet — run a fresh analysis"}
+              </span>
+            </div>
+            <button
+              className="analyze-btn"
+              onClick={loadSignal}
+              disabled={signalLoading}
+            >
+              {signalLoading
+                ? "Analyzing…"
+                : signals.length
+                  ? "↻ Re-analyze"
+                  : "Analyze market"}
+            </button>
+          </div>
+
           {signals.length > 0 && <ConsensusBanner signals={signals} />}
 
           {signals.length ? (
@@ -209,12 +243,15 @@ export default function Dashboard({ cfg }: { cfg: InstrumentConfig }) {
               signals={signals}
               gold={values.gold}
               history={history}
-              nextSignalIn={nextSignalIn}
               priceLabel={cfg.priceLabel}
               priceSuffix={cfg.priceSuffix}
             />
           ) : (
-            <div className="spin">Analyzing across horizons…</div>
+            <div className="analyze-empty">
+              {signalLoading
+                ? "Running a deep multi-horizon analysis…"
+                : "Click “Analyze market” for the latest AI recommendation across all three time horizons."}
+            </div>
           )}
 
           {cfg.strategyEndpoint && (

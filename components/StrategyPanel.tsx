@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
+import { timeAgo } from "@/lib/format";
+import { useAuth } from "./AuthProvider";
 
 type Verdict = "BUY" | "SELL" | "HOLD";
 interface Strategy {
@@ -37,6 +39,7 @@ interface StrategyData {
   available: boolean;
   engine: string;
   horizon: string;
+  fetchedAt: string;
 }
 
 const HORIZONS = [
@@ -72,6 +75,7 @@ function rr(side: "buy" | "sell", entry: number, sl: number, t2: number): string
 }
 
 export default function StrategyPanel({ endpoint }: { endpoint: string }) {
+  const { requireAuth } = useAuth();
   const [horizon, setHorizon] = useState("short");
   const [profit, setProfit] = useState("1.5");
   const [data, setData] = useState<StrategyData | null>(null);
@@ -81,11 +85,12 @@ export default function StrategyPanel({ endpoint }: { endpoint: string }) {
 
   const load = useCallback(
     async (h: string, p: string) => {
+      if (!requireAuth()) return;
       setLoading(true);
       try {
         const pn = Number(p) || 1.5;
         const res: StrategyData = await fetch(
-          `${endpoint}?horizon=${h}&profit=${pn}`,
+          `${endpoint}?horizon=${h}&profit=${pn}&fresh=1`,
           { cache: "no-store" },
         ).then((r) => r.json());
         setData(res);
@@ -97,18 +102,12 @@ export default function StrategyPanel({ endpoint }: { endpoint: string }) {
         setLoading(false);
       }
     },
-    [endpoint],
+    [endpoint, requireAuth],
   );
 
-  useEffect(() => {
-    load(horizon, "1.5");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [load]);
-
-  const onHorizon = (h: string) => {
-    setHorizon(h);
-    load(h, profit);
-  };
+  // Manual — no auto-run. Changing the horizon just selects it; the user clicks
+  // Generate to run the analysis.
+  const onHorizon = (h: string) => setHorizon(h);
 
   return (
     <section className="strat">
@@ -121,6 +120,9 @@ export default function StrategyPanel({ endpoint }: { endpoint: string }) {
             >
               {data.market_open ? "🟢" : "🔴"} {data.session}
             </span>
+          )}
+          {data?.fetchedAt && (
+            <span className="strat-when">analyzed {timeAgo(data.fetchedAt)}</span>
           )}
         </div>
         <div className="strat-inputs">
@@ -156,7 +158,11 @@ export default function StrategyPanel({ endpoint }: { endpoint: string }) {
       </div>
 
       {!data ? (
-        <div className="spin">Generating strategy…</div>
+        <div className="analyze-empty">
+          {loading
+            ? "Running the AI strategy analysis…"
+            : "Pick a horizon and target %, then press Generate to run the AI strategy analysis."}
+        </div>
       ) : !data.available ? (
         <div className="strat-empty">⚠️ {data.no_trade_reason}</div>
       ) : (

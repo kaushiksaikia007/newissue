@@ -23,9 +23,10 @@ export async function GET(req: NextRequest) {
   if (!Number.isFinite(profit) || profit <= 0) profit = 1.5;
   profit = Math.min(profit, 50);
 
+  const fresh = sp.get("fresh") === "1";
   const key = `${horizon}:${profit}`;
   const hit = cache.get(key);
-  if (hit && hit.expires > Date.now()) return NextResponse.json(hit.data);
+  if (!fresh && hit && hit.expires > Date.now()) return NextResponse.json(hit.data);
 
   const data = await buildStrategy("gold", horizon, profit);
   cache.set(key, { data, expires: Date.now() + cacheMs() });

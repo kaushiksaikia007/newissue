@@ -24,14 +24,12 @@ export default function SignalHero({
   signals,
   gold,
   history,
-  nextSignalIn,
   priceLabel,
   priceSuffix,
 }: {
   signals: GoldSignal[];
   gold: Metric | null;
   history: number[];
-  nextSignalIn: number;
   priceLabel: string;
   priceSuffix?: string;
 }) {
@@ -84,8 +82,7 @@ export default function SignalHero({
         <div className="score" style={{ marginTop: 4 }}>
           {active.engine === "openai"
             ? "AI-powered analysis"
-            : "Heuristic model (add OPENAI_API_KEY)"}{" "}
-          · next in {nextSignalIn}s
+            : "Heuristic model (add OPENAI_API_KEY)"}
         </div>
       </div>
 
@@ -225,7 +222,7 @@ export default function SignalHero({
                   <div className="factor" key={f.id}>
                     <div className="top">
                       <span className="fname">
-                        {f.label}
+                        <span className="fname-line">{f.label}</span>
                         {f.value ? (
                           <span className="fval">{f.value}</span>
                         ) : null}

@@ -1,6 +1,6 @@
-import Dashboard from "@/components/Dashboard";
-import { NIFTY_CONFIG } from "@/lib/instruments/config";
+import { redirect } from "next/navigation";
 
+// Markets are now tabs on "/". Keep this path working for old links.
 export default function Nifty50Page() {
-  return <Dashboard cfg={NIFTY_CONFIG} />;
+  redirect("/");
 }
