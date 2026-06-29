@@ -1,7 +1,8 @@
 import { getGoldSpotPerGram } from "./sources/goldSpot";
 import { getNiftyData } from "./instruments/nifty";
+import { getSensexData } from "./instruments/sensex";
 
-export type Inst = "nifty" | "gold";
+export type Inst = "nifty" | "gold" | "sensex";
 
 const API = process.env.PAPER_API_URL || "";
 const TOKEN = process.env.PAPER_API_TOKEN || "";
@@ -39,6 +40,7 @@ async function php(
 async function priceOf(inst: Inst): Promise<number | null> {
   try {
     if (inst === "gold") return await getGoldSpotPerGram();
+    if (inst === "sensex") return (await getSensexData()).index?.value ?? null;
     return (await getNiftyData()).index?.value ?? null;
   } catch {
     return null;

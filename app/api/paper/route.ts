@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 function instOf(v: string | null): Inst {
-  return v === "gold" ? "gold" : "nifty";
+  return v === "gold" ? "gold" : v === "sensex" ? "sensex" : "nifty";
 }
 
 export async function GET(req: NextRequest) {

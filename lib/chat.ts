@@ -1,5 +1,6 @@
 import { getMetrics } from "./macro";
 import { getNiftyData } from "./instruments/nifty";
+import { getSensexData } from "./instruments/sensex";
 import { getNews, getNiftyNews } from "./sources/news";
 import {
   averageOf,
@@ -9,7 +10,7 @@ import {
 } from "./analysis";
 import { addAlert, ensureAlertMonitor } from "./alerts";
 
-export type Inst = "nifty" | "gold";
+export type Inst = "nifty" | "gold" | "sensex";
 export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
@@ -35,10 +36,16 @@ async function context(instrument: Inst) {
       headlines: news.slice(0, 8).map((n) => n.title),
     };
   }
-  const [b, news] = await Promise.all([getNiftyData(), getNiftyNews()]);
+  const [b, news] = await Promise.all([
+    instrument === "sensex" ? getSensexData() : getNiftyData(),
+    getNiftyNews(),
+  ]);
   const f = computeNiftyFactors(b.metrics, news);
   return {
-    asset: "Nifty 50 — NSE benchmark index (points)",
+    asset:
+      instrument === "sensex"
+        ? "BSE Sensex — BSE 30-stock benchmark index (points)"
+        : "Nifty 50 — NSE benchmark index (points)",
     price: b.index ? { level: r2(b.index.value), changePct: b.index.changePct } : null,
     indicators: b.metrics.map((m) => ({
       name: m.label,
@@ -57,7 +64,8 @@ export async function answerChat(
   userEmail?: string | null,
 ): Promise<{ reply: string }> {
   const key = process.env.OPENAI_API_KEY;
-  const name = instrument === "gold" ? "Gold" : "Nifty 50";
+  const name =
+    instrument === "gold" ? "Gold" : instrument === "sensex" ? "BSE Sensex" : "Nifty 50";
   if (!key) {
     return { reply: "The AI brain needs an OpenAI key configured on the server." };
   }

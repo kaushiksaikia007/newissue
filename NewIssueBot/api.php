@@ -22,7 +22,7 @@ if (!hash_equals($API_TOKEN, (string)$token)) {
 
 $action = $_GET['action'] ?? $body['action'] ?? 'get';
 $inst   = $_GET['instrument'] ?? $body['instrument'] ?? 'nifty';
-if ($inst !== 'gold' && $inst !== 'nifty') $inst = 'nifty';
+if ($inst !== 'gold' && $inst !== 'nifty' && $inst !== 'sensex') $inst = 'nifty';
 
 function ensure_account($pdo, $inst) {
     $s = $pdo->prepare('SELECT cash, beginning FROM accounts WHERE instrument=?');
@@ -138,7 +138,7 @@ try {
         $s->execute([$id]);
         $a = $s->fetch();
         if ($a) {
-            $name = $a['instrument'] === 'gold' ? 'Gold' : 'Nifty 50';
+            $name = $a['instrument'] === 'gold' ? 'Gold' : ($a['instrument'] === 'sensex' ? 'BSE Sensex' : 'Nifty 50');
             $dir = $a['direction'] === 'above' ? 'risen above' : 'dropped below';
             $subject = "New Issue Bot alert: $name has $dir " . $a['threshold'];
             $msg = "Your $name price alert has triggered.\n\n"

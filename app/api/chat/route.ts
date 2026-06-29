@@ -6,7 +6,12 @@ export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
-  const instrument: Inst = body.instrument === "gold" ? "gold" : "nifty";
+  const instrument: Inst =
+    body.instrument === "gold"
+      ? "gold"
+      : body.instrument === "sensex"
+        ? "sensex"
+        : "nifty";
   const messages: ChatMessage[] = Array.isArray(body.messages) ? body.messages : [];
 
   // Resolve the signed-in user's registered email from their session so price

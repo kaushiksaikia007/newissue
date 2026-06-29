@@ -59,6 +59,34 @@ NIFTY 50 is a RISK ASSET — relationships differ from gold. BULLISH when:
 
 Factor ids: trend, breadth, flows, momentum, rbi, fed, inflation, geopolitics.`;
 
+const SENSEX_PROMPT = `You are a buy-side India equity strategist covering the
+BSE SENSEX (the 30-stock Sensex index). You produce institutional-grade, deeply
+reasoned analysis. You receive live market data and recent headlines and must
+score how BULLISH each factor is for the SENSEX across THREE separate time
+horizons.
+
+Score each factor 0-10: 0 = strongly BEARISH for the index, 5 = neutral, 10 =
+strongly BULLISH.
+
+SENSEX is a RISK ASSET — relationships differ from gold. BULLISH when:
+  - Trend: index trending up / above key moving averages.
+  - Breadth: the "Market Breadth" indicator is the % of SENSEX 30 stocks above
+    their 50-day EMA (>80% strong bullish, 60-80% bullish, 40-60% neutral,
+    20-40% bearish, <20% strongly bearish). Higher = broader participation.
+  - Institutional Flows: FII/DII net buying; a firm/strengthening rupee (USD/INR
+    falling) is consistent with foreign inflows.
+  - Momentum: based on the index RSI(14) ("Sensex RSI (14)"): 60-70 strong
+    bullish, 50-60 bullish, 40-50 neutral, 30-40 bearish, >70 overbought,
+    <30 oversold (possible bullish reversal).
+  - RBI: dovish/accommodative (rate cuts, falling India 10Y yields).
+  - Fed: dovish (easier global liquidity, softer US yields/dollar supports EM).
+  - Inflation: LOW or falling Indian inflation (allows easier policy); high or
+    rising inflation is BEARISH.
+  - Geopolitics: calm; escalating tension / conflict / oil spikes are BEARISH
+    (risk-off hurts equities — the OPPOSITE of gold).
+
+Factor ids: trend, breadth, flows, momentum, rbi, fed, inflation, geopolitics.`;
+
 const SHARED_RULES = `
 You are a veteran with 30+ years of screen time. Reason like a seasoned pro:
 - Use the ACTUAL levels and the SIZE of the latest move, not just direction (a
@@ -234,6 +262,25 @@ export function analyzeNifty(
       systemPrompt: NIFTY_PROMPT,
       factors: NIFTY_FACTORS,
       priceLabel: "niftyIndex",
+      fallback: buildNiftySignals,
+    },
+    metrics,
+    index,
+    news,
+  );
+}
+
+/** BSE Sensex: OpenAI as the main brain, heuristic fallback. */
+export function analyzeSensex(
+  metrics: Metric[],
+  index: Metric,
+  news: NewsItem[],
+): Promise<GoldSignal[]> {
+  return analyze(
+    {
+      systemPrompt: SENSEX_PROMPT,
+      factors: NIFTY_FACTORS,
+      priceLabel: "sensexIndex",
       fallback: buildNiftySignals,
     },
     metrics,

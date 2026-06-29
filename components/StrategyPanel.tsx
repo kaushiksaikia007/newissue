@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 import { timeAgo } from "@/lib/format";
 import { useAuth } from "./AuthProvider";
+import { useStrategyStore, type StratInst } from "./StrategyStore";
 
 type Verdict = "BUY" | "SELL" | "HOLD";
 interface Strategy {
@@ -74,8 +75,15 @@ function rr(side: "buy" | "sell", entry: number, sl: number, t2: number): string
   return `1:${(reward / risk).toFixed(1)}`;
 }
 
-export default function StrategyPanel({ endpoint }: { endpoint: string }) {
+export default function StrategyPanel({
+  endpoint,
+  instrument,
+}: {
+  endpoint: string;
+  instrument?: StratInst;
+}) {
   const { requireAuth } = useAuth();
+  const { setStrategy } = useStrategyStore();
   const [horizon, setHorizon] = useState("short");
   const [profit, setProfit] = useState("1.5");
   const [data, setData] = useState<StrategyData | null>(null);
@@ -96,13 +104,26 @@ export default function StrategyPanel({ endpoint }: { endpoint: string }) {
         setData(res);
         setBuySL(String(res.buy_strategy.stop_loss));
         setSellSL(String(res.sell_strategy.stop_loss));
+        // Publish the exact generated setup so Paper Trading can load it.
+        if (instrument && res.available) {
+          setStrategy(instrument, {
+            buy: res.buy_strategy,
+            sell: res.sell_strategy,
+            horizon: res.horizon,
+            horizonLabel:
+              HORIZONS.find((x) => x.id === res.horizon)?.label ?? res.horizon,
+            profit: pn,
+            no_trade: res.no_trade,
+            fetchedAt: res.fetchedAt,
+          });
+        }
       } catch {
         /* keep previous */
       } finally {
         setLoading(false);
       }
     },
-    [endpoint, requireAuth],
+    [endpoint, requireAuth, instrument, setStrategy],
   );
 
   // Manual — no auto-run. Changing the horizon just selects it; the user clicks
@@ -201,41 +222,41 @@ export default function StrategyPanel({ endpoint }: { endpoint: string }) {
             ))}
           </div>
 
-          {data.no_trade ? (
+          {data.no_trade && (
             <div className="no-trade">
-              <span className="no-trade-flag">⏸ No high-probability setup</span>
+              <span className="no-trade-flag">⏸ No high-conviction setup</span>
               <span>{data.no_trade_reason}</span>
             </div>
-          ) : (
-            <>
-              {data.report.hold && (
-                <div className="hold-bar">
-                  <span className="hold-label">⏳ AI-suggested hold</span>
-                  <span className="hold-val">{data.report.hold}</span>
-                </div>
-              )}
-            <div className="strat-cards">
-              {data.buy_strategy.show && (
-                <StrategyCard
-                  kind="BUY"
-                  s={data.buy_strategy}
-                  color={verdictColor.BUY}
-                  sl={buySL}
-                  setSL={setBuySL}
-                />
-              )}
-              {data.sell_strategy.show && (
-                <StrategyCard
-                  kind="SELL"
-                  s={data.sell_strategy}
-                  color={verdictColor.SELL}
-                  sl={sellSL}
-                  setSL={setSellSL}
-                />
-              )}
-            </div>
-            </>
           )}
+
+          {!data.no_trade && data.report.hold && (
+            <div className="hold-bar">
+              <span className="hold-label">⏳ AI-suggested hold</span>
+              <span className="hold-val">{data.report.hold}</span>
+            </div>
+          )}
+
+          {/* Every setup is shown — the ones that clear the conviction bar are
+              highlighted as high win-probability, the rest are shown for context
+              with their (lower) win probability flagged. */}
+          <div className="strat-cards">
+            <StrategyCard
+              kind="BUY"
+              s={data.buy_strategy}
+              color={verdictColor.BUY}
+              tier={data.buy_strategy.probability > 65 ? "high" : "low"}
+              sl={buySL}
+              setSL={setBuySL}
+            />
+            <StrategyCard
+              kind="SELL"
+              s={data.sell_strategy}
+              color={verdictColor.SELL}
+              tier={data.sell_strategy.probability > 65 ? "high" : "low"}
+              sl={sellSL}
+              setSL={setSellSL}
+            />
+          </div>
 
           <Report report={data.report} noTrade={data.no_trade} />
         </>
@@ -250,22 +271,41 @@ function StrategyCard({
   color,
   sl,
   setSL,
+  tier,
 }: {
   kind: string;
   s: Strategy;
   color: string;
   sl: string;
   setSL: (v: string) => void;
+  tier: "high" | "low";
 }) {
   const slNum = Number(sl) || s.stop_loss;
   const live = rr(s.side, s.entry_mid, slNum, s.target_2);
   const edited = slNum !== s.stop_loss;
+  const high = tier === "high";
 
   return (
-    <div className="strat-card" style={{ borderColor: color }}>
+    <div
+      className={`strat-card tier-${tier}`}
+      style={high ? { borderColor: color } : undefined}
+    >
       <div className="strat-card-head">
-        <span style={{ color }}>{kind} Setup</span>
-        <span className="strat-prob">{s.probability}% win prob</span>
+        <span
+          className="strat-kind"
+          style={high ? { color } : undefined}
+        >
+          {kind} Setup
+        </span>
+        <span className={`prob-pill ${tier}`}>
+          <span className="prob-num">{s.probability}%</span>
+          <span className="prob-cap">win&nbsp;prob</span>
+        </span>
+      </div>
+      <div className={`tier-tag ${tier}`}>
+        {high
+          ? "✓ High win probability (above 65%)"
+          : "⚠ Lower win probability (65% or below)"}
       </div>
       <Row label="Entry" value={s.entry_zone} />
       <div className="strat-row">

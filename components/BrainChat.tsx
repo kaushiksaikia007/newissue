@@ -12,7 +12,7 @@ export default function BrainChat({
   instrument,
   label,
 }: {
-  instrument: "gold" | "nifty";
+  instrument: "gold" | "nifty" | "sensex";
   label: string;
 }) {
   const { getToken } = useAuth();

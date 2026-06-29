@@ -3,14 +3,29 @@ import {
   getNiftyBreadth,
   getNiftyTechnicals,
   type NiftyTechnicals,
+  type NiftyBundle,
+  type Breadth,
 } from "./instruments/nifty";
+import {
+  getSensexData,
+  getSensexBreadth,
+  getSensexTechnicals,
+} from "./instruments/sensex";
 import { getGoldTechnicals } from "./instruments/gold";
 import { getMetrics } from "./macro";
 import { getNiftyNews, getNews } from "./sources/news";
 import { breadthScore, momentumScore, tensionCount } from "./analysis";
 
 export type Horizon = "intraday" | "short" | "long";
-export type Instrument = "nifty" | "gold";
+export type Instrument = "nifty" | "gold" | "sensex";
+
+/** Indian equity indices share the NSE/BSE session, macro inputs and logic. */
+const isIndian = (i: Instrument) => i !== "gold";
+const INSTRUMENT_LABEL: Record<Instrument, string> = {
+  gold: "GOLD",
+  nifty: "NIFTY 50",
+  sensex: "BSE SENSEX",
+};
 
 export interface Strategy {
   show: boolean;
@@ -80,7 +95,7 @@ function estimateHold(
   sess: { open: boolean; minutesToClose: number },
 ): string {
   if (horizon === "intraday") {
-    if (instrument === "nifty") {
+    if (isIndian(instrument)) {
       return sess.open && sess.minutesToClose > 0
         ? `Intraday — exit before the 15:30 close (~${sess.minutesToClose} min left)`
         : "Intraday — within the next live session";
@@ -125,14 +140,20 @@ function extraWord(score: number): string {
 }
 
 async function technicalsFor(inst: Instrument): Promise<NiftyTechnicals | null> {
-  return inst === "gold" ? getGoldTechnicals() : getNiftyTechnicals();
+  if (inst === "gold") return getGoldTechnicals();
+  if (inst === "sensex") return getSensexTechnicals();
+  return getNiftyTechnicals();
 }
 
 async function fundamentalsFor(inst: Instrument): Promise<Extra[]> {
-  if (inst === "nifty") {
+  if (isIndian(inst)) {
+    const dataGetter: () => Promise<NiftyBundle> =
+      inst === "sensex" ? getSensexData : getNiftyData;
+    const breadthGetter: () => Promise<Breadth | null> =
+      inst === "sensex" ? getSensexBreadth : getNiftyBreadth;
     const [bundle, breadth, news] = await Promise.all([
-      getNiftyData(),
-      getNiftyBreadth(),
+      dataGetter(),
+      breadthGetter(),
       getNiftyNews(),
     ]);
     const m = (id: string) => bundle.metrics.find((x) => x.id === id);
@@ -288,7 +309,7 @@ export async function buildStrategy(
   let sellProb = clamp(100 - buyProb, 5, 95);
 
   let timeNote = "";
-  if (instrument === "nifty" && horizon === "intraday" && sess.open && sess.minutesToClose < 75) {
+  if (isIndian(instrument) && horizon === "intraday" && sess.open && sess.minutesToClose < 75) {
     const penalty = Math.round((75 - sess.minutesToClose) / 4);
     buyProb = clamp(buyProb - penalty, 5, 95);
     sellProb = clamp(sellProb - penalty, 5, 95);
@@ -332,8 +353,8 @@ export async function buildStrategy(
     const dom = buyProb >= sellProb ? "BUY" : "SELL";
     const domP = Math.max(buyProb, sellProb);
     const scoreLine = `Trend ${trendScore}/10, momentum ${momentumSc.toFixed(1)}/10, volatility ${volScore}/10, ${extras.map((e) => `${e.label.toLowerCase()} ${e.score.toFixed(1)}/10`).join(", ")}.`;
-    if (instrument === "nifty" && horizon === "intraday" && !sess.open) {
-      noTradeReason = `Intraday trading needs a live NSE session — it is currently ${sess.label.toLowerCase()}. Try Short or Long, or wait for the 09:15 IST open.`;
+    if (isIndian(instrument) && horizon === "intraday" && !sess.open) {
+      noTradeReason = `Intraday trading needs a live Indian market session — it is currently ${sess.label.toLowerCase()}. Try Short or Long, or wait for the 09:15 IST open.`;
     } else if (strict) {
       const miss: string[] = [];
       if (domP < minProb) miss.push(`win probability (${domP}%) is below the ${minProb}% high-conviction bar`);
@@ -341,7 +362,7 @@ export async function buildStrategy(
       if (trendScore > 4 && trendScore < 6) miss.push("price is not cleanly aligned above/below its 20/50/200-EMAs");
       if (tech.macd > tech.macdSignal && tech.rsi > 72) miss.push("momentum is overbought");
       if (miss.length === 0) miss.push("the trend, momentum and macro signals do not yet line up");
-      const label = instrument === "gold" ? "GOLD" : "NIFTY 50";
+      const label = INSTRUMENT_LABEL[instrument];
       noTradeReason = `No high-conviction ${label} setup. With real capital at stake, this engine only signals on strong confluence — ${miss.join("; ")}. ${scoreLine} Standing aside protects your capital; wait for a clean trend + momentum + ADX alignment.`;
     } else {
       const why =
@@ -430,16 +451,22 @@ async function writeReport(
   const key = process.env.OPENAI_API_KEY;
   if (!key) return null;
   const model = process.env.OPENAI_MODEL || "gpt-4o";
-  const asset = instrument === "gold" ? "spot gold (per gram)" : "the NIFTY 50 index";
+  const asset =
+    instrument === "gold"
+      ? "spot gold (per gram)"
+      : instrument === "sensex"
+        ? "the BSE SENSEX index"
+        : "the NIFTY 50 index";
   const payload = JSON.stringify({
     asset, recommendation: s.recommendation, market_summary: s.market_summary,
     scores: s.scores, inputs: s.inputs, buy: s.buy_strategy, sell: s.sell_strategy,
     horizon: s.horizon, session: s.session, timeNote, noTrade: s.no_trade,
   });
+  const indexName = instrument === "sensex" ? "SENSEX" : "Nifty";
   const factorNote =
     instrument === "gold"
       ? "trend (CMP vs EMA20/50/200 stack), momentum (RSI/MACD/ADX), the US dollar, real yields/Fed policy, inflation, and risk/geopolitical sentiment"
-      : "trend (CMP vs EMA20/50/200 stack & structure), market breadth (% of Nifty stocks above their 50-EMA), momentum (RSI/MACD/ADX), institutional flows (FII/DII, USD/INR), RBI policy, US Fed/global liquidity, India inflation, and geopolitical risk";
+      : `trend (CMP vs EMA20/50/200 stack & structure), market breadth (% of ${indexName} stocks above their 50-EMA), momentum (RSI/MACD/ADX), institutional flows (FII/DII, USD/INR), RBI policy, US Fed/global liquidity, India inflation, and geopolitical risk`;
   const system = `You are a veteran buy-side strategist with 30+ years trading ${asset}.
 This is a REAL-MONEY decision; people act on it, so reason like a seasoned
 professional, not a generalist. Work through ${factorNote}. Demand CONFLUENCE

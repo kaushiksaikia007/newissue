@@ -1,10 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import Link from "next/link";
+import { useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import PaperTrading from "./PaperTrading";
-import { GOLD_CONFIG, NIFTY_CONFIG } from "@/lib/instruments/config";
+import {
+  GOLD_CONFIG,
+  NIFTY_CONFIG,
+  SENSEX_CONFIG,
+} from "@/lib/instruments/config";
 import { useAuth } from "./AuthProvider";
+import { useTab } from "./TabProvider";
 
 const INSTRUMENTS = [
   {
@@ -13,6 +18,13 @@ const INSTRUMENTS = [
     coin: "N50",
     coinClass: "coin-nifty",
     cfg: NIFTY_CONFIG,
+  },
+  {
+    id: "sensex" as const,
+    label: "BSE Sensex",
+    coin: "SX",
+    coinClass: "coin-nifty",
+    cfg: SENSEX_CONFIG,
   },
   {
     id: "gold" as const,
@@ -25,13 +37,16 @@ const INSTRUMENTS = [
 
 export default function PaperTerminal() {
   const { user, ready, openAuth } = useAuth();
+  const { setTab } = useTab();
+  const router = useRouter();
+  const pathname = usePathname();
   const [sel, setSel] = useState("nifty");
   const inst = INSTRUMENTS.find((i) => i.id === sel) ?? INSTRUMENTS[0];
 
-  // Direct navigation guard: prompt sign-in if someone lands here logged out.
-  useEffect(() => {
-    if (ready && !user) openAuth();
-  }, [ready, user, openAuth]);
+  const backToMarkets = () => {
+    setTab("nifty");
+    if (pathname !== "/") router.push("/");
+  };
 
   if (ready && !user) {
     return (
@@ -45,9 +60,9 @@ export default function PaperTerminal() {
             </div>
           </div>
           <div className="status">
-            <Link href="/" className="topbar-btn">
+            <button className="topbar-btn" onClick={backToMarkets}>
               ← Back to Markets
-            </Link>
+            </button>
           </div>
         </header>
         <div className="analyze-empty">
@@ -71,9 +86,9 @@ export default function PaperTerminal() {
           </div>
         </div>
         <div className="status">
-          <Link href="/" className="topbar-btn">
+          <button className="topbar-btn" onClick={backToMarkets}>
             ← Back to Markets
-          </Link>
+          </button>
         </div>
       </header>
 
@@ -89,12 +104,7 @@ export default function PaperTerminal() {
         ))}
       </div>
 
-      <PaperTrading
-        key={inst.id}
-        instrument={inst.id}
-        strategyEndpoint={inst.cfg.strategyEndpoint}
-        label={inst.label}
-      />
+      <PaperTrading key={inst.id} instrument={inst.id} label={inst.label} />
     </div>
   );
 }

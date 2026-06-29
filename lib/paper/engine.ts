@@ -1,7 +1,8 @@
 import { getGoldSpotPerGram } from "../sources/goldSpot";
 import { getNiftyData } from "../instruments/nifty";
+import { getSensexData } from "../instruments/sensex";
 
-export type Inst = "nifty" | "gold";
+export type Inst = "nifty" | "gold" | "sensex";
 
 export interface Position {
   id: string;
@@ -30,7 +31,7 @@ const API = process.env.PAPER_API_URL || ""; // e.g. https://puthibharal.com/New
 const TOKEN = process.env.PAPER_API_TOKEN || "";
 
 // In-memory working copy (authoritative store is MySQL via the PHP API).
-const mem: Record<Inst, Account | null> = { nifty: null, gold: null };
+const mem: Record<Inst, Account | null> = { nifty: null, gold: null, sensex: null };
 let monitorStarted = false;
 
 function fresh(): Account {
@@ -80,6 +81,7 @@ async function ensureLoaded(inst: Inst): Promise<Account> {
 async function priceOf(inst: Inst): Promise<number | null> {
   try {
     if (inst === "gold") return await getGoldSpotPerGram();
+    if (inst === "sensex") return (await getSensexData()).index?.value ?? null;
     return (await getNiftyData()).index?.value ?? null;
   } catch {
     return null;
@@ -118,7 +120,7 @@ function ensureMonitor(): void {
   if (monitorStarted) return;
   monitorStarted = true;
   setInterval(async () => {
-    for (const inst of ["gold", "nifty"] as Inst[]) {
+    for (const inst of ["gold", "nifty", "sensex"] as Inst[]) {
       if (!mem[inst] || !mem[inst]!.positions.length) continue;
       const price = await priceOf(inst);
       if (price != null) await reconcile(inst, price);

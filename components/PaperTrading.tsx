@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { timeAgo } from "@/lib/format";
+import { useStrategyStore, type StoredLeg } from "./StrategyStore";
 
 interface Position {
   id: string;
@@ -36,13 +38,13 @@ function pnlOf(p: Position, ltp: number): number {
 
 export default function PaperTrading({
   instrument,
-  strategyEndpoint,
   label,
 }: {
-  instrument: "nifty" | "gold";
-  strategyEndpoint?: string;
+  instrument: "nifty" | "gold" | "sensex";
   label: string;
 }) {
+  const { strategies } = useStrategyStore();
+  const stored = strategies[instrument];
   const [data, setData] = useState<PaperData | null>(null);
   const [side, setSide] = useState<"buy" | "sell">("buy");
   const [qty, setQty] = useState("10");
@@ -51,10 +53,6 @@ export default function PaperTrading({
   const [tpPct, setTpPct] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
   const [histPage, setHistPage] = useState(0);
-  const [strat, setStrat] = useState<{
-    buy?: { show: boolean; stop_loss: number; target_2: number };
-    sell?: { show: boolean; stop_loss: number; target_2: number };
-  } | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -72,27 +70,6 @@ export default function PaperTrading({
     const id = setInterval(refresh, 1500);
     return () => clearInterval(id);
   }, [refresh]);
-
-  useEffect(() => {
-    if (!strategyEndpoint) return;
-    let active = true;
-    const tick = async () => {
-      try {
-        const s = await fetch(`${strategyEndpoint}?horizon=short&profit=1.5`, {
-          cache: "no-store",
-        }).then((r) => r.json());
-        if (active) setStrat({ buy: s.buy_strategy, sell: s.sell_strategy });
-      } catch {
-        /* ignore */
-      }
-    };
-    tick();
-    const id = setInterval(tick, 60_000);
-    return () => {
-      active = false;
-      clearInterval(id);
-    };
-  }, [strategyEndpoint]);
 
   const flash = (m: string) => {
     setMsg(m);
@@ -119,6 +96,26 @@ export default function PaperTrading({
 
   const place = (extra: Record<string, unknown>) =>
     post({ action: "open", side, qty: Number(qty), ...extra });
+
+  // Load a strategy into the ticket fields WITHOUT executing it — the user
+  // reviews the prefilled side / stop-loss / target, then presses Place.
+  const loadStrategy = (leg: StoredLeg) => {
+    setSide(leg.side);
+    setSl(String(leg.stop_loss));
+    setTarget(String(leg.target_2));
+    setTpPct("");
+    if (!qty || Number(qty) <= 0) setQty("10");
+    flash(
+      `${leg.side.toUpperCase()} strategy loaded into the ticket — review and press Place to execute.`,
+    );
+  };
+
+  // Split the generated setups into high (>65%) and low win-probability groups.
+  const legs: StoredLeg[] = stored
+    ? [stored.buy, stored.sell].filter((l) => l && l.target_2 > 0)
+    : [];
+  const highLegs = legs.filter((l) => l.probability > 65);
+  const lowLegs = legs.filter((l) => l.probability <= 65);
 
   const reset = () => {
     if (confirm("Reset paper account to $1,000,000 and clear all trades?"))
@@ -225,31 +222,63 @@ export default function PaperTrading({
         </button>
       </div>
 
-      {strat && (strat.buy?.show || strat.sell?.show) && (
-        <div className="exec-row">
-          <span className="muted">Execute AI strategy (Short):</span>
-          {strat.buy?.show && (
-            <button
-              className="exec-btn buy"
-              onClick={() =>
-                post({ action: "open", side: "buy", qty: Number(qty) || 10, sl: strat.buy!.stop_loss, target: strat.buy!.target_2 })
-              }
-            >
-              ▲ Buy · SL {strat.buy.stop_loss} · T {strat.buy.target_2}
-            </button>
-          )}
-          {strat.sell?.show && (
-            <button
-              className="exec-btn sell"
-              onClick={() =>
-                post({ action: "open", side: "sell", qty: Number(qty) || 10, sl: strat.sell!.stop_loss, target: strat.sell!.target_2 })
-              }
-            >
-              ▼ Sell · SL {strat.sell.stop_loss} · T {strat.sell.target_2}
-            </button>
-          )}
-        </div>
-      )}
+      <div className="exec-wrap">
+        {!stored ? (
+          <div className="exec-empty">
+            No strategy generated yet. Open the{" "}
+            <strong>{label}</strong> dashboard, click <strong>Generate</strong> in
+            the AI Trading Strategy panel, and the exact setups will appear here to
+            load into your ticket.
+          </div>
+        ) : legs.length === 0 ? (
+          <div className="exec-empty">
+            The last {label} analysis ({stored.horizonLabel}) found no actionable
+            levels. Generate again on the dashboard.
+          </div>
+        ) : (
+          <>
+            <div className="exec-title">
+              Strategies generated on the <strong>{label}</strong> dashboard ·{" "}
+              {stored.horizonLabel} · {timeAgo(stored.fetchedAt)}. Click a setup to
+              load it into the ticket — execution stays manual (press Place).
+            </div>
+
+            {highLegs.length > 0 && (
+              <div className="exec-group">
+                <div className="exec-group-h high">
+                  High win probability (above 65%)
+                </div>
+                <div className="exec-row">
+                  {highLegs.map((leg) => (
+                    <StratLoadButton
+                      key={leg.side}
+                      leg={leg}
+                      onLoad={loadStrategy}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {lowLegs.length > 0 && (
+              <div className="exec-group">
+                <div className="exec-group-h low">
+                  Lower win probability (65% or below)
+                </div>
+                <div className="exec-row">
+                  {lowLegs.map((leg) => (
+                    <StratLoadButton
+                      key={leg.side}
+                      leg={leg}
+                      onLoad={loadStrategy}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
 
       {msg && <div className="paper-msg">{msg}</div>}
 
@@ -334,6 +363,37 @@ export default function PaperTrading({
           );
         })()}
     </section>
+  );
+}
+
+function StratLoadButton({
+  leg,
+  onLoad,
+}: {
+  leg: StoredLeg;
+  onLoad: (leg: StoredLeg) => void;
+}) {
+  const high = leg.probability > 65;
+  const kind = leg.side;
+  return (
+    <button
+      className={`exec-btn ${kind} tier-${high ? "high" : "low"}`}
+      onClick={() => onLoad(leg)}
+    >
+      <span className="exec-top">
+        <span className="exec-dir">
+          {kind === "buy" ? "▲ Load Buy" : "▼ Load Sell"}
+        </span>
+        <span className={`prob-pill ${high ? "high" : "low"}`}>
+          <span className="prob-num">{leg.probability}%</span>
+          <span className="prob-cap">win</span>
+        </span>
+      </span>
+      <span className="exec-levels">
+        Entry {leg.entry_mid} · SL {leg.stop_loss} · T1 {leg.target_1} · T2{" "}
+        {leg.target_2}
+      </span>
+    </button>
   );
 }
 
