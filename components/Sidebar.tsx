@@ -93,6 +93,8 @@ export default function Sidebar() {
     <>
       <header className="mobile-bar">
         <button
+          type="button"
+          suppressHydrationWarning
           className={`mobile-burger${open ? " open" : ""}`}
           onClick={() => setOpen((o) => !o)}
           aria-label={open ? "Close menu" : "Open menu"}
@@ -130,6 +132,8 @@ export default function Sidebar() {
             {g.items.map((it) => (
               <button
                 key={it.id}
+                type="button"
+                suppressHydrationWarning
                 className={`sb-item${onMarkets && tab === it.id ? " active" : ""}`}
                 onClick={() => select(it.id)}
               >
@@ -158,8 +162,9 @@ export default function Sidebar() {
               placeholder="Enter ISIN…"
               maxLength={12}
               aria-label="Look up an ISIN"
+              suppressHydrationWarning
             />
-            <button type="submit" aria-label="Look up ISIN">
+            <button type="submit" aria-label="Look up ISIN" suppressHydrationWarning>
               →
             </button>
           </form>
@@ -169,6 +174,8 @@ export default function Sidebar() {
               className={`sb-item sb-isin${tab === `isin:${t.isin}` && onMarkets ? " active" : ""}`}
             >
               <button
+                type="button"
+                suppressHydrationWarning
                 className="sb-isin-main"
                 onClick={() => openIsinTab(t.isin)}
               >
@@ -179,6 +186,8 @@ export default function Sidebar() {
                 </span>
               </button>
               <button
+                type="button"
+                suppressHydrationWarning
                 className="sb-isin-close"
                 onClick={() => closeIsin(t.isin)}
                 aria-label={`Close ${t.isin}`}
