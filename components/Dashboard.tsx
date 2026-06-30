@@ -179,6 +179,8 @@ export default function Dashboard({ cfg }: { cfg: InstrumentConfig }) {
         <div className="status">
           <div className="status-actions">
             <button
+              type="button"
+              suppressHydrationWarning
               className="topbar-btn"
               onClick={() => {
                 if (requireAuth()) setTab("paper");
@@ -187,6 +189,8 @@ export default function Dashboard({ cfg }: { cfg: InstrumentConfig }) {
               💹 Paper Trading
             </button>
             <button
+              type="button"
+              suppressHydrationWarning
               className={`alert-btn${alerts ? " on" : ""}`}
               onClick={toggleAlerts}
               title="Notify me when the recommendation changes"

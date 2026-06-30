@@ -3,6 +3,7 @@
 import Dashboard from "./Dashboard";
 import PaperTerminal from "./PaperTerminal";
 import IsinView from "./IsinView";
+import WatchlistView from "./WatchlistView";
 import {
   GOLD_CONFIG,
   NIFTY_CONFIG,
@@ -27,6 +28,9 @@ export default function MarketTabs() {
       </div>
       <div style={{ display: tab === "sensex" ? "block" : "none" }}>
         <Dashboard cfg={SENSEX_CONFIG} />
+      </div>
+      <div style={{ display: tab === "watchlist" ? "block" : "none" }}>
+        <WatchlistView active={tab === "watchlist"} />
       </div>
       <div style={{ display: tab === "paper" ? "block" : "none" }}>
         <PaperTerminal />

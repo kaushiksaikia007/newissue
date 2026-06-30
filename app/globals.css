@@ -211,6 +211,218 @@ a {
   border-top: 1px solid var(--border);
 }
 
+/* ---------- Watchlist (full view) ---------- */
+.wl-toolbar {
+  margin-bottom: 14px;
+}
+.wl-search {
+  position: relative;
+  max-width: 520px;
+}
+.wl-search input {
+  width: 100%;
+  padding: 11px 13px;
+  border-radius: 10px;
+  border: 1px solid var(--border-strong);
+  background: rgba(7, 9, 15, 0.6);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+.wl-search input:focus {
+  outline: none;
+  border-color: rgba(245, 196, 81, 0.5);
+}
+.wl-results {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 5px);
+  left: 0;
+  right: 0;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--panel-solid);
+  border: 1px solid var(--border-strong);
+  border-radius: 11px;
+  box-shadow: var(--shadow);
+  padding: 5px;
+}
+.wl-result {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  padding: 9px 10px;
+  border-radius: 8px;
+}
+.wl-result:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.05);
+}
+.wl-result:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.wl-result.muted {
+  color: var(--muted);
+  cursor: default;
+}
+.wl-r-main {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  min-width: 0;
+}
+.wl-r-tick {
+  font-size: 13px;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+.wl-r-desc {
+  font-size: 11.5px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wl-r-meta {
+  font-size: 10.5px;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+
+.wl-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(248px, 1fr));
+  gap: 12px;
+}
+.wl-card {
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--panel);
+  backdrop-filter: blur(8px);
+  padding: 13px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.wl-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.wl-card-id {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.wl-card-name {
+  font-size: 13.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wl-card-sym {
+  font-size: 10.5px;
+  font-family: ui-monospace, monospace;
+  color: var(--muted);
+}
+.wl-x {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+}
+.wl-x:hover {
+  background: rgba(255, 93, 93, 0.15);
+  color: var(--red);
+}
+.wl-card-price {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+.wl-card-val {
+  font-size: 22px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.wl-chg {
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.wl-target {
+  display: flex;
+  gap: 6px;
+}
+.wl-target select {
+  flex-shrink: 0;
+  padding: 8px 6px;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  background: rgba(7, 9, 15, 0.6);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+.wl-target input {
+  min-width: 0;
+  flex: 1;
+  padding: 8px 9px;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  background: rgba(7, 9, 15, 0.6);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+.wl-target input:focus,
+.wl-target select:focus {
+  outline: none;
+  border-color: rgba(245, 196, 81, 0.5);
+}
+.wl-set {
+  flex-shrink: 0;
+  padding: 8px 11px;
+  border-radius: 8px;
+  border: 1px solid rgba(245, 196, 81, 0.4);
+  background: rgba(245, 196, 81, 0.14);
+  color: var(--gold-2);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.wl-set:hover {
+  background: rgba(245, 196, 81, 0.24);
+}
+.wl-status {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+.wl-status.hit {
+  color: var(--green);
+  font-weight: 700;
+}
+
 /* Mobile top bar + drawer scrim — hidden on desktop, shown under 820px. */
 .mobile-bar {
   display: none;

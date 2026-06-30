@@ -3,6 +3,7 @@ import "./globals.css";
 import Sidebar from "@/components/Sidebar";
 import { TabProvider } from "@/components/TabProvider";
 import { AuthProvider } from "@/components/AuthProvider";
+import { WatchlistProvider } from "@/components/WatchlistProvider";
 import { StrategyStoreProvider } from "@/components/StrategyStore";
 
 export const metadata: Metadata = {
@@ -29,14 +30,16 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <AuthProvider>
-          <TabProvider>
-            <StrategyStoreProvider>
-              <div className="app-shell">
-                <Sidebar />
-                <main className="app-main">{children}</main>
-              </div>
-            </StrategyStoreProvider>
-          </TabProvider>
+          <WatchlistProvider>
+            <TabProvider>
+              <StrategyStoreProvider>
+                <div className="app-shell">
+                  <Sidebar />
+                  <main className="app-main">{children}</main>
+                </div>
+              </StrategyStoreProvider>
+            </TabProvider>
+          </WatchlistProvider>
         </AuthProvider>
       </body>
     </html>

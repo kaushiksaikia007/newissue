@@ -45,6 +45,17 @@ function map_trade($r) {
         'sl'=>fnum($r['sl']),'target'=>fnum($r['target']),'openedAt'=>(int)$r['opened_at'],
         'exit'=>(float)$r['exit'],'closedAt'=>(int)$r['closed_at'],'pnl'=>(float)$r['pnl'],'reason'=>$r['reason']];
 }
+function map_watch($r) {
+    return ['id'=>$r['id'],'symbol'=>$r['symbol'],'display'=>$r['display'],
+        'exchange'=>$r['exchange'],'type'=>$r['type'],'currency'=>$r['currency'],
+        'target'=>fnum($r['target']),'direction'=>$r['direction'],
+        'triggered'=>(int)$r['triggered'],'createdAt'=>(int)$r['created_at']];
+}
+function watch_list_for($pdo, $email) {
+    $s = $pdo->prepare('SELECT * FROM watchlist WHERE email=? ORDER BY created_at DESC');
+    $s->execute([$email]);
+    return ['items' => array_map('map_watch', $s->fetchAll())];
+}
 function state($pdo, $inst) {
     $acc = ensure_account($pdo, $inst);
     $p = $pdo->prepare('SELECT * FROM positions WHERE instrument=? ORDER BY opened_at DESC');
@@ -150,6 +161,92 @@ try {
             @mail($a['email'], $subject, $msg, $headers);
             $pdo->prepare('UPDATE alerts SET triggered=1, triggered_at=? WHERE id=?')
                 ->execute([round(microtime(true) * 1000), $id]);
+            echo json_encode(['ok' => true]);
+        } else {
+            echo json_encode(['ok' => false]);
+        }
+    } elseif ($action === 'watch_list') {
+        $email = trim((string)($body['email'] ?? $_GET['email'] ?? ''));
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            echo json_encode(['items' => []]);
+        } else {
+            echo json_encode(watch_list_for($pdo, $email));
+        }
+    } elseif ($action === 'watch_add') {
+        $email  = trim((string)($body['email'] ?? ''));
+        $symbol = strtoupper(trim((string)($body['symbol'] ?? '')));
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL) || $symbol === '') {
+            http_response_code(400);
+            echo json_encode(['error' => 'invalid_watch']);
+        } else {
+            $id        = $body['id'] ?? uniqid('w', true);
+            $display   = trim((string)($body['display'] ?? $symbol));
+            $exchange  = trim((string)($body['exchange'] ?? ''));
+            $type      = trim((string)($body['type'] ?? ''));
+            $currency  = trim((string)($body['currency'] ?? ''));
+            $target    = isset($body['target']) && $body['target'] !== null && (float)$body['target'] > 0
+                ? (float)$body['target'] : null;
+            $direction = ($body['direction'] ?? 'above') === 'below' ? 'below' : 'above';
+            // Upsert: re-adding a held symbol just refreshes its metadata.
+            $pdo->prepare(
+                'INSERT INTO watchlist(id,email,symbol,display,exchange,type,currency,target,direction,triggered,created_at)
+                 VALUES(?,?,?,?,?,?,?,?,?,0,?)
+                 ON DUPLICATE KEY UPDATE display=VALUES(display), exchange=VALUES(exchange),
+                   type=VALUES(type), currency=VALUES(currency)'
+            )->execute([$id, $email, $symbol, $display, $exchange ?: null, $type ?: null,
+                $currency ?: null, $target, $direction, round(microtime(true) * 1000)]);
+            echo json_encode(watch_list_for($pdo, $email));
+        }
+    } elseif ($action === 'watch_set_target') {
+        $email = trim((string)($body['email'] ?? ''));
+        $id    = (string)($body['id'] ?? '');
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL) || $id === '') {
+            http_response_code(400);
+            echo json_encode(['error' => 'invalid_watch']);
+        } else {
+            $target = isset($body['target']) && $body['target'] !== null && (float)$body['target'] > 0
+                ? (float)$body['target'] : null;
+            $direction = ($body['direction'] ?? 'above') === 'below' ? 'below' : 'above';
+            // Setting/clearing a target re-arms the alert (triggered back to 0).
+            $pdo->prepare('UPDATE watchlist SET target=?, direction=?, triggered=0, triggered_at=NULL
+                           WHERE id=? AND email=?')
+                ->execute([$target, $direction, $id, $email]);
+            echo json_encode(watch_list_for($pdo, $email));
+        }
+    } elseif ($action === 'watch_remove') {
+        $email = trim((string)($body['email'] ?? ''));
+        $id    = (string)($body['id'] ?? '');
+        $pdo->prepare('DELETE FROM watchlist WHERE id=? AND email=?')->execute([$id, $email]);
+        echo json_encode(watch_list_for($pdo, $email));
+    } elseif ($action === 'watch_active') {
+        // Monitor-only: every armed target awaiting a trigger.
+        $rows = $pdo->query('SELECT * FROM watchlist WHERE target IS NOT NULL AND triggered=0')->fetchAll();
+        echo json_encode(['items' => array_map('map_watch', $rows)]);
+    } elseif ($action === 'watch_trigger') {
+        $id    = (string)($body['id'] ?? '');
+        $price = (float)($body['price'] ?? 0);
+        $email = trim((string)($body['email'] ?? ''));
+        // Atomically claim the trigger first so the cron and the live browser
+        // path can never both email for the same target.
+        $sql = 'UPDATE watchlist SET triggered=1, triggered_at=? WHERE id=? AND triggered=0 AND target IS NOT NULL';
+        $params = [round(microtime(true) * 1000), $id];
+        if ($email !== '') { $sql .= ' AND email=?'; $params[] = $email; }
+        $claim = $pdo->prepare($sql);
+        $claim->execute($params);
+        if ($claim->rowCount() === 1) {
+            $s = $pdo->prepare('SELECT * FROM watchlist WHERE id=?');
+            $s->execute([$id]);
+            $w = $s->fetch();
+            $dir  = $w['direction'] === 'below' ? 'dropped below' : 'risen above';
+            $name = $w['display'] ?: $w['symbol'];
+            $subject = "New Issue Bot watchlist alert: $name has $dir " . $w['target'];
+            $msg = "Your watchlist price alert has triggered.\n\n"
+                . "$name (" . $w['symbol'] . ") is now $price.\n"
+                . "It has $dir your target of " . $w['target'] . ".\n\n"
+                . "— New Issue Bot";
+            $headers = "From: New Issue Bot <alerts@puthibharal.com>\r\n"
+                . "Content-Type: text/plain; charset=utf-8\r\n";
+            @mail($w['email'], $subject, $msg, $headers);
             echo json_encode(['ok' => true]);
         } else {
             echo json_encode(['ok' => false]);

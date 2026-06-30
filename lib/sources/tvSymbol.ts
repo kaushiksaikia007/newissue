@@ -69,22 +69,57 @@ export async function resolveTvSymbol(text: string): Promise<TvSymbol | null> {
   return sym;
 }
 
+function toSymbol(r: SearchRow): TvSymbol | null {
+  const ticker = stripTags(r.symbol ?? "");
+  const exchange = stripTags(r.exchange ?? "").toUpperCase();
+  if (!ticker || !exchange) return null;
+  // `prefix` (when present) is the routing exchange the chart/quote feed
+  // expects; the human `exchange` label is the fallback.
+  const ex = (r.prefix ? stripTags(r.prefix).toUpperCase() : "") || exchange;
+  return {
+    symbol: `${ex}:${ticker}`,
+    ticker,
+    exchange,
+    description: stripTags(r.description ?? ""),
+    type: r.type ?? "",
+    currency: r.currency_code || undefined,
+  };
+}
+
 function pick(rows: SearchRow[]): TvSymbol | null {
   for (const r of rows) {
-    const ticker = stripTags(r.symbol ?? "");
-    const exchange = stripTags(r.exchange ?? "").toUpperCase();
-    if (!ticker || !exchange) continue;
-    // `prefix` (when present) is the routing exchange the chart/quote feed
-    // expects; the human `exchange` label is the fallback.
-    const ex = (r.prefix ? stripTags(r.prefix).toUpperCase() : "") || exchange;
-    return {
-      symbol: `${ex}:${ticker}`,
-      ticker,
-      exchange,
-      description: stripTags(r.description ?? ""),
-      type: r.type ?? "",
-      currency: r.currency_code || undefined,
-    };
+    const s = toSymbol(r);
+    if (s) return s;
   }
   return null;
+}
+
+/**
+ * Free-text search across TradingView (stocks, commodities, indices, crypto,
+ * forex…). Returns the top matches for a picker UI. Lightly cached.
+ */
+export async function searchTvSymbols(text: string, limit = 12): Promise<TvSymbol[]> {
+  const key = (text || "").trim();
+  if (key.length < 1) return [];
+  let rows: SearchRow[] = [];
+  try {
+    const url = `${SEARCH}?text=${encodeURIComponent(key)}&hl=1&lang=en&domain=production`;
+    const res = await fetch(url, { headers: HEADERS, cache: "no-store" });
+    if (res.ok) {
+      const j = (await res.json()) as SearchRow[] | { symbols?: SearchRow[] };
+      rows = Array.isArray(j) ? j : (j.symbols ?? []);
+    }
+  } catch {
+    /* network */
+  }
+  const out: TvSymbol[] = [];
+  const seen = new Set<string>();
+  for (const r of rows) {
+    const s = toSymbol(r);
+    if (!s || seen.has(s.symbol)) continue;
+    seen.add(s.symbol);
+    out.push(s);
+    if (out.length >= limit) break;
+  }
+  return out;
 }

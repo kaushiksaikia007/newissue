@@ -60,14 +60,14 @@ export default function PaperTerminal() {
             </div>
           </div>
           <div className="status">
-            <button className="topbar-btn" onClick={backToMarkets}>
+            <button type="button" suppressHydrationWarning className="topbar-btn" onClick={backToMarkets}>
               ← Back to Markets
             </button>
           </div>
         </header>
         <div className="analyze-empty">
           You need to be signed in to open the paper trading terminal.{" "}
-          <button className="link-btn" onClick={openAuth}>
+          <button type="button" suppressHydrationWarning className="link-btn" onClick={openAuth}>
             Sign in or create an account
           </button>
         </div>
@@ -86,7 +86,7 @@ export default function PaperTerminal() {
           </div>
         </div>
         <div className="status">
-          <button className="topbar-btn" onClick={backToMarkets}>
+          <button type="button" suppressHydrationWarning className="topbar-btn" onClick={backToMarkets}>
             ← Back to Markets
           </button>
         </div>
@@ -96,6 +96,8 @@ export default function PaperTerminal() {
         {INSTRUMENTS.map((i) => (
           <button
             key={i.id}
+            type="button"
+            suppressHydrationWarning
             className={`seg-btn${sel === i.id ? " active" : ""}`}
             onClick={() => setSel(i.id)}
           >

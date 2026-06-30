@@ -13,6 +13,14 @@ $DB_PASS = 'Pnlmasters@456';
 // Shared secret — MUST match PAPER_API_TOKEN in the Next.js .env.local file.
 $API_TOKEN = 'nib_a7f3c9e21b8d4056ab12cd34ef56';
 
+// 24/7 monitor (monitor.php) settings.
+//  - SITE_URL: the public URL of the deployed Next.js site (Vercel). The monitor
+//    calls SITE_URL/api/prices to read live TradingView prices.
+//  - MONITOR_TOKEN: shared secret guarding /api/prices. MUST match the
+//    MONITOR_TOKEN environment variable set in the Next.js / Vercel project.
+$SITE_URL      = 'https://newissue.vercel.app';   // public URL of the deployed site
+$MONITOR_TOKEN = 'nib_mon_8f2c1a47d9e60b35';        // <-- set the same value in Vercel env
+
 try {
     $pdo = new PDO(
         "mysql:host=$DB_HOST;dbname=$DB_NAME;charset=utf8mb4",
@@ -78,6 +86,28 @@ $pdo->exec("CREATE TABLE IF NOT EXISTS alerts (
     triggered TINYINT NOT NULL DEFAULT 0,
     triggered_at BIGINT NULL,
     INDEX idx_al_active (triggered)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+// --- Watchlist (per-user TradingView symbols + optional target-price alert) ---
+// One row per watched symbol for a user. `target` is the price level to watch;
+// when null the item is display-only (no alert). `triggered` flips to 1 once the
+// monitor has emailed the user, so it fires once per armed target.
+$pdo->exec("CREATE TABLE IF NOT EXISTS watchlist (
+    id VARCHAR(40) PRIMARY KEY,
+    email VARCHAR(190) NOT NULL,
+    symbol VARCHAR(64) NOT NULL,
+    display VARCHAR(190) NOT NULL,
+    exchange VARCHAR(40) NULL,
+    type VARCHAR(24) NULL,
+    currency VARCHAR(12) NULL,
+    target DOUBLE NULL,
+    direction VARCHAR(8) NULL,
+    triggered TINYINT NOT NULL DEFAULT 0,
+    triggered_at BIGINT NULL,
+    created_at BIGINT NOT NULL,
+    INDEX idx_wl_email (email),
+    INDEX idx_wl_active (triggered),
+    UNIQUE KEY uq_wl_email_symbol (email, symbol)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
 // --- Authentication (registered users, e-mail OTP signup, sessions) ---

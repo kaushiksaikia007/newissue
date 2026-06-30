@@ -28,6 +28,7 @@ const GROUPS: { title: string; items: Item[] }[] = [
   {
     title: "Trading",
     items: [
+      { id: "watchlist", label: "Watchlist", symbol: "Live alerts", icon: "👁" },
       { id: "paper", label: "Paper Trading", symbol: "Demo desk", icon: "💹" },
     ],
   },
