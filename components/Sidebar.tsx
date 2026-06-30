@@ -26,6 +26,10 @@ const GROUPS: { title: string; items: Item[] }[] = [
     ],
   },
   {
+    title: "Fixed Income",
+    items: [{ id: "isin", label: "ISIN Lookup", symbol: "ESMA FIRDS", icon: "🔖" }],
+  },
+  {
     title: "Trading",
     items: [
       { id: "watchlist", label: "Watchlist", symbol: "Live alerts", icon: "👁" },
@@ -37,9 +41,8 @@ const GROUPS: { title: string; items: Item[] }[] = [
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { tab, setTab, isinTabs, openIsin, closeIsin } = useTab();
+  const { tab, setTab, isinTabs } = useTab();
   const { requireAuth } = useAuth();
-  const [isinInput, setIsinInput] = useState("");
   const [open, setOpen] = useState(false);
 
   const onMarkets = pathname === "/";
@@ -73,21 +76,6 @@ export default function Sidebar() {
     setTab(id);
     setOpen(false);
     if (!onMarkets) router.push("/"); // come back to the markets view first
-  };
-
-  const lookupIsin = () => {
-    const v = isinInput.toUpperCase().trim();
-    if (!/^[A-Z]{2}[A-Z0-9]{9}[0-9]$/.test(v)) return;
-    openIsin(v);
-    setIsinInput("");
-    setOpen(false);
-    if (!onMarkets) router.push("/");
-  };
-
-  const openIsinTab = (isin: string) => {
-    setTab(`isin:${isin}`);
-    setOpen(false);
-    if (!onMarkets) router.push("/");
   };
 
   return (
@@ -147,57 +135,6 @@ export default function Sidebar() {
             ))}
           </div>
         ))}
-
-        <div className="sb-group">
-          <div className="sb-group-title">Fixed Income · ISIN</div>
-          <form
-            className="isin-lookup"
-            onSubmit={(e) => {
-              e.preventDefault();
-              lookupIsin();
-            }}
-          >
-            <input
-              value={isinInput}
-              onChange={(e) => setIsinInput(e.target.value.toUpperCase())}
-              placeholder="Enter ISIN…"
-              maxLength={12}
-              aria-label="Look up an ISIN"
-              suppressHydrationWarning
-            />
-            <button type="submit" aria-label="Look up ISIN" suppressHydrationWarning>
-              →
-            </button>
-          </form>
-          {isinTabs.map((t) => (
-            <div
-              key={t.isin}
-              className={`sb-item sb-isin${tab === `isin:${t.isin}` && onMarkets ? " active" : ""}`}
-            >
-              <button
-                type="button"
-                suppressHydrationWarning
-                className="sb-isin-main"
-                onClick={() => openIsinTab(t.isin)}
-              >
-                <span className="sb-icon">🔖</span>
-                <span className="sb-item-main">
-                  <span className="sb-item-label">{t.label}</span>
-                  <span className="sb-item-symbol">{t.isin}</span>
-                </span>
-              </button>
-              <button
-                type="button"
-                suppressHydrationWarning
-                className="sb-isin-close"
-                onClick={() => closeIsin(t.isin)}
-                aria-label={`Close ${t.isin}`}
-              >
-                ✕
-              </button>
-            </div>
-          ))}
-        </div>
       </nav>
 
         <div className="sidebar-account">

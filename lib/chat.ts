@@ -25,7 +25,7 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
  * so it needs only the existing OPENAI_API_KEY. Returns grounded text (with the
  * sources the model cites) or a short "unavailable" note — never throws.
  */
-async function webSearch(query: string, key: string): Promise<string> {
+export async function webSearch(query: string, key: string): Promise<string> {
   try {
     const res = await fetch(OPENAI_URL, {
       method: "POST",
