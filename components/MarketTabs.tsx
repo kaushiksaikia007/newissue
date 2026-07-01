@@ -1,35 +1,27 @@
 "use client";
 
-import Dashboard from "./Dashboard";
 import PaperTerminal from "./PaperTerminal";
 import IsinView from "./IsinView";
 import IsinLookupView from "./IsinLookupView";
 import WatchlistView from "./WatchlistView";
-import {
-  GOLD_CONFIG,
-  NIFTY_CONFIG,
-  SENSEX_CONFIG,
-} from "@/lib/instruments/config";
+import CountryBrain from "./CountryBrain";
 import { useTab } from "./TabProvider";
 
 /**
- * Both instrument dashboards stay mounted; we just toggle visibility — so each
- * tab keeps its own state (analysis, chat, scroll) when you switch, like
- * browser tabs.
+ * Each tab's view stays mounted; we just toggle visibility — so each tab keeps
+ * its own state (analysis, chat, scroll) when you switch, like browser tabs.
  */
 export default function MarketTabs() {
   const { tab, isinTabs } = useTab();
   return (
     <>
-      <div style={{ display: tab === "gold" ? "block" : "none" }}>
-        <Dashboard cfg={GOLD_CONFIG} />
+      <div style={{ display: tab === "country" ? "block" : "none" }}>
+        <CountryBrain />
       </div>
-      <div style={{ display: tab === "nifty" ? "block" : "none" }}>
-        <Dashboard cfg={NIFTY_CONFIG} />
-      </div>
-      <div style={{ display: tab === "sensex" ? "block" : "none" }}>
-        <Dashboard cfg={SENSEX_CONFIG} />
-      </div>
+      {/* Other brains — content coming soon. */}
+      <div style={{ display: tab === "company" ? "block" : "none" }} />
+      <div style={{ display: tab === "sector" ? "block" : "none" }} />
+      <div style={{ display: tab === "commodities" ? "block" : "none" }} />
       <div style={{ display: tab === "isin" ? "block" : "none" }}>
         <IsinLookupView />
       </div>

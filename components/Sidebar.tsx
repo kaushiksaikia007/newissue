@@ -15,14 +15,12 @@ interface Item {
 
 const GROUPS: { title: string; items: Item[] }[] = [
   {
-    title: "Commodities",
-    items: [{ id: "gold", label: "Gold", symbol: "XAU / USD", icon: "🪙" }],
-  },
-  {
-    title: "Indices",
+    title: "Brains",
     items: [
-      { id: "nifty", label: "Nifty 50", symbol: "NSE", icon: "📈" },
-      { id: "sensex", label: "BSE Sensex", symbol: "BSE", icon: "📊" },
+      { id: "country", label: "Country Brain", symbol: "Macro AI", icon: "🌍" },
+      { id: "company", label: "Company Brain", symbol: "Equity AI", icon: "🏢" },
+      { id: "sector", label: "Sector Brain", symbol: "Industry AI", icon: "🏭" },
+      { id: "commodities", label: "Commodities Brain", symbol: "Commodity AI", icon: "🪙" },
     ],
   },
   {

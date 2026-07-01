@@ -36,7 +36,7 @@ interface TabCtxValue {
 }
 
 const TabCtx = createContext<TabCtxValue>({
-  tab: "gold",
+  tab: "country",
   setTab: () => {},
   isinTabs: [],
   openIsin: () => {},
@@ -51,7 +51,7 @@ const TABS_KEY = "isin-tabs";
 const SYM_KEY = "sym-tabs";
 
 export function TabProvider({ children }: { children: ReactNode }) {
-  const [tab, setTabState] = useState<Tab>("gold");
+  const [tab, setTabState] = useState<Tab>("country");
   const [isinTabs, setIsinTabs] = useState<IsinTab[]>([]);
   const [symTabs, setSymTabs] = useState<SymTab[]>([]);
 
@@ -76,7 +76,8 @@ export function TabProvider({ children }: { children: ReactNode }) {
       /* ignore */
     }
     const s = localStorage.getItem("active-tab");
-    if (s) setTabState(s);
+    // Old commodity/index tabs were replaced by Brains — fall back to a valid tab.
+    if (s && !["gold", "nifty", "sensex", "analyze"].includes(s)) setTabState(s);
   }, []);
 
   const setTab = useCallback((t: Tab) => {
@@ -121,11 +122,11 @@ export function TabProvider({ children }: { children: ReactNode }) {
     setTabState((cur) => {
       if (cur !== `isin:${isin}`) return cur;
       try {
-        localStorage.setItem("active-tab", "gold");
+        localStorage.setItem("active-tab", "country");
       } catch {
         /* ignore */
       }
-      return "gold";
+      return "country";
     });
   }, []);
 

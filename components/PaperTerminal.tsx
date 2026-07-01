@@ -44,7 +44,7 @@ export default function PaperTerminal() {
   const inst = INSTRUMENTS.find((i) => i.id === sel) ?? INSTRUMENTS[0];
 
   const backToMarkets = () => {
-    setTab("nifty");
+    setTab("country");
     if (pathname !== "/") router.push("/");
   };
 
