@@ -31,6 +31,9 @@ next-env.d.ts
 # paper-trading demo data
 .paper-data.json
 
+# country-brain cache + saved brains (collected TradingView data)
+/.data/
+
 node_modules
 .next
 .env

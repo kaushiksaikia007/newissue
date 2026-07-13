@@ -68,6 +68,52 @@ export function tradingviewScan(
   return tradingviewScanCols(tickers, ["close", "change_abs"]);
 }
 
+export interface ScreenRow {
+  /** "EXCHANGE:TICKER". */
+  symbol: string;
+  /** Column values in the requested order. */
+  values: (number | string | null)[];
+}
+
+/**
+ * Screen a whole market (not a fixed ticker list): POST a filter/sort/range
+ * query to a country screener and get back the matching rows with their symbol
+ * and requested columns. Used to discover the top companies of a country.
+ * Throws on transport failure.
+ */
+export async function tradingviewScreen(
+  screener: string,
+  columns: string[],
+  opts: {
+    filter?: { left: string; operation: string; right: unknown }[];
+    sort?: { sortBy: string; sortOrder: "asc" | "desc" };
+    range?: [number, number];
+  } = {},
+): Promise<ScreenRow[]> {
+  const body = JSON.stringify({
+    filter: opts.filter ?? [],
+    columns,
+    sort: opts.sort,
+    range: opts.range ?? [0, 100],
+  });
+  const res = await fetch(`https://scanner.tradingview.com/${screener}/scan`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+      Accept: "application/json",
+    },
+    body,
+    next: { revalidate: 0 },
+  });
+  if (!res.ok) throw new Error(`TradingView screen -> ${res.status}`);
+  const json = (await res.json()) as {
+    data?: { s: string; d: (number | string | null)[] }[];
+  };
+  return (json.data ?? []).map((r) => ({ symbol: r.s, values: r.d }));
+}
+
 /** Fetch all market metrics from TradingView in a single request. */
 export async function tradingviewBatch(): Promise<Record<string, Metric>> {
   const entries = Object.entries(SPECS);

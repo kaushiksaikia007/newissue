@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(break)"
+      "Bash(break)",
+      "Bash(node -e ' *)",
+      "Bash(node pbtest2.mjs)"
     ]
   }
 }

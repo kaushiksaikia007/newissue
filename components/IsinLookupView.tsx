@@ -21,6 +21,7 @@ export default function IsinLookupView() {
     openIsin(v); // switches to the isin:<ISIN> tab and renders the full report
     setVal("");
   };
+  
 
   return (
     <div className="wrap">

@@ -2,10 +2,11 @@ import { tvQuotes, type FullQuote } from "./sources/tvQuote";
 import { getFiiDii } from "./sources/nseFiiDii";
 import { findStock, suggestStocks } from "./sources/nseStocks";
 import { webSearch, type ChatMessage } from "./chat";
+import type { CountryBrainConfig } from "./countryBrainStore";
 
 // Dedicated macro/markets brain for a country. India ("IN") is preloaded with a
 // live-data snapshot (VIX, USD/INR, 10Y yield, Brent, FII/DII flows); other
-// countries fall back to web_search for any current figure.
+// countries have no live data and must use web_search for any current figures.
 
 const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
 
@@ -91,10 +92,26 @@ async function runStockLookup(query: string): Promise<string> {
   return `No NSE-listed company matching "${q}" was found in the local knowledge base. Do not guess its details.`;
 }
 
+/** A compact description of the user's customized brain, for the system prompt. */
+function brainScopeBlock(brain: CountryBrainConfig | null | undefined): string {
+  if (!brain || !brain.companies?.length) return "";
+  const companies = brain.companies
+    .map((c) => `${c.name} (${c.ticker}${c.sector ? `, ${c.sector}` : ""})`)
+    .join("; ");
+  const sectors = brain.sectors?.join(", ") || "—";
+  const commodities = brain.commodities?.map((c) => c.name).join(", ") || "—";
+  return `The user has CUSTOMIZED this brain. Focus your answers on their selected scope:
+- Companies: ${companies}
+- Sectors: ${sectors}
+- Key commodities: ${commodities}
+When the user asks a general question, relate it to these companies, sectors and commodities. You may still use your tools (web_search / stock lookup) for figures about them.`;
+}
+
 export async function answerCountryChat(
   code: string,
   name: string,
   messages: ChatMessage[],
+  brain?: CountryBrainConfig | null,
 ): Promise<{ reply: string }> {
   const key = process.env.OPENAI_API_KEY;
   if (!key) {
@@ -104,6 +121,7 @@ export async function answerCountryChat(
   const isIndia = code.toUpperCase() === "IN";
   const live = isIndia ? await indiaLiveData() : null;
   const model = process.env.OPENAI_MODEL || "gpt-4o";
+  const scope = brainScopeBlock(brain);
 
   const liveBlock = live
     ? `Here is the CURRENT live market data for ${name} — quote these real numbers whenever relevant:
@@ -122,7 +140,7 @@ You also have a local knowledge base of NSE-listed company profiles. For ANY que
   const system = `You are the dedicated macro and markets AI brain for ${name}. You focus on ${name}'s economy and financial markets.
 
 ${liveBlock}
-
+${scope ? `\n${scope}\n` : ""}
 Accuracy rules (critical):
 - The live snapshot (if present) contains ONLY current values. It has NO historical data, past prices, records, or all-time highs.
 - For ANY fact not in the snapshot, or whenever you are not certain a number is current, call web_search and base your answer on what it returns. Never invent or guess a number, and never rely on memory for figures.
