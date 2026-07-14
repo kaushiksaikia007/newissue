@@ -34,6 +34,36 @@ interface ScanResp {
   data?: { s: string; d: (number | null)[] }[];
 }
 
+/* TradingView rate-limits request bursts with HTTP 429. Once tripped, every
+ * further call makes it worse and the limit never clears — so when we see a
+ * 429, short-circuit ALL scanner traffic for a cooldown window. Callers treat
+ * the failure like any transport error and keep serving their cached values. */
+let scannerCooldownUntil = 0;
+const SCANNER_COOLDOWN_MS = 60_000;
+
+async function scannerFetch(url: string, body: string): Promise<Response> {
+  if (Date.now() < scannerCooldownUntil) {
+    throw new Error("TradingView -> cooling down after 429");
+  }
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+      Accept: "application/json",
+    },
+    body,
+    next: { revalidate: 0 },
+  });
+  if (res.status === 429) {
+    scannerCooldownUntil = Date.now() + SCANNER_COOLDOWN_MS;
+    throw new Error("TradingView -> 429 (cooldown engaged)");
+  }
+  if (!res.ok) throw new Error(`TradingView -> ${res.status}`);
+  return res;
+}
+
 /**
  * Generic batch query: returns ticker -> column values (in the requested
  * order). `screener` selects the universe ("global", "india", ...). Throws on
@@ -45,18 +75,7 @@ export async function tradingviewScanCols(
   screener = "global",
 ): Promise<Map<string, (number | null)[]>> {
   const body = JSON.stringify({ symbols: { tickers }, columns });
-  const res = await fetch(`https://scanner.tradingview.com/${screener}/scan`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-      Accept: "application/json",
-    },
-    body,
-    next: { revalidate: 0 },
-  });
-  if (!res.ok) throw new Error(`TradingView -> ${res.status}`);
+  const res = await scannerFetch(`https://scanner.tradingview.com/${screener}/scan`, body);
   const json = (await res.json()) as ScanResp;
   return new Map((json.data ?? []).map((r) => [r.s, r.d]));
 }
@@ -85,9 +104,11 @@ export async function tradingviewScreen(
   screener: string,
   columns: string[],
   opts: {
-    filter?: { left: string; operation: string; right: unknown }[];
+    filter?: { left: string; operation: string; right?: unknown }[];
     sort?: { sortBy: string; sortOrder: "asc" | "desc" };
     range?: [number, number];
+    /** Convert all monetary columns to this currency (e.g. "usd"). */
+    toCurrency?: string;
   } = {},
 ): Promise<ScreenRow[]> {
   const body = JSON.stringify({
@@ -95,19 +116,9 @@ export async function tradingviewScreen(
     columns,
     sort: opts.sort,
     range: opts.range ?? [0, 100],
+    ...(opts.toCurrency ? { price_conversion: { to_currency: opts.toCurrency } } : {}),
   });
-  const res = await fetch(`https://scanner.tradingview.com/${screener}/scan`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-      Accept: "application/json",
-    },
-    body,
-    next: { revalidate: 0 },
-  });
-  if (!res.ok) throw new Error(`TradingView screen -> ${res.status}`);
+  const res = await scannerFetch(`https://scanner.tradingview.com/${screener}/scan`, body);
   const json = (await res.json()) as {
     data?: { s: string; d: (number | string | null)[] }[];
   };
@@ -122,19 +133,7 @@ export async function tradingviewBatch(): Promise<Record<string, Metric>> {
     columns: ["close", "change_abs"],
   });
 
-  const res = await fetch(SCAN_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-      Accept: "application/json",
-    },
-    body,
-    next: { revalidate: 0 },
-  });
-  if (!res.ok) throw new Error(`TradingView -> ${res.status}`);
-
+  const res = await scannerFetch(SCAN_URL, body);
   const json = (await res.json()) as ScanResp;
   const rows = new Map((json.data ?? []).map((r) => [r.s, r.d]));
   const asOf = new Date().toISOString().slice(0, 10);

@@ -38,6 +38,7 @@ export default function AnalyzeView() {
         if (active) setSearching(false);
       }
     }, 300);
+
     return () => {
       active = false;
       clearTimeout(id);

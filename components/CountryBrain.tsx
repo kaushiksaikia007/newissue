@@ -60,7 +60,7 @@ const NO_INDEX_VALUATION = new Set(["RU"]);
 
 /* ------------------------------- Sentiment ------------------------------- */
 
-type Tone = "up" | "flat" | "down";
+type Tone = "up" | "flat" | "down" | "deepup" | "warn";
 type Sentiment =
   | "Strong Bullish"
   | "Bullish"
@@ -90,23 +90,98 @@ interface Driver {
   detail: string;
   tone: Tone;
 }
-interface SectorImpact {
+/* Live sector impact (see /api/country/sectors + lib/sectorData.ts) */
+interface SectorComponentData {
+  label: string;
+  score: number; // 0-100 bullishness
+  weight: number;
+}
+interface SectorLive {
   name: string;
-  s: Sentiment;
+  score: number; // weighted composite 0-100
+  sentiment: Sentiment;
+  components: SectorComponentData[];
+  missing: string[];
+}
+interface SectorImpactData {
+  sectors: SectorLive[];
+  asOf: string | null;
+}
+/* India sector→NSE-index layer (see /api/country/sector-index + lib/sectorIndices.ts) */
+interface SectorIndexQuote {
+  id: string;
+  sector: string;
+  indexName: string;
+  nseSymbol: string;
+  last: number;
+  change: number;
+  changePct: number;
+  open: number;
+  high: number;
+  low: number;
+  previousClose: number;
+  yearHigh: number;
+  yearLow: number;
+  pe: number | null;
+  pb: number | null;
+  divYield: number | null;
+  advances: number | null;
+  declines: number | null;
+  unchanged: number | null;
+  perChange1w: number | null;
+  perChange30d: number | null;
+  perChange365d: number | null;
+  live: boolean;
+  /** ms timestamp of the last websocket tick (client-side only). */
+  tickTs?: number;
+}
+interface SectorIndexListData {
+  sectors: SectorIndexQuote[];
+  asOf: string | null;
+}
+interface SectorNewsItem {
+  title: string;
+  link: string;
+  source: string;
+  publishedAt: string;
+}
+interface SectorIndexDetailData {
+  detail: SectorIndexQuote | null;
+  news: SectorNewsItem[];
+  asOf: string | null;
 }
 interface Forecast {
   horizon: string;
   s: Sentiment;
   conf: number;
 }
-interface RiskAxis {
+/* Live risk radar (see /api/country/risk + lib/riskData.ts) */
+interface RiskComponentData {
   label: string;
-  level: number; // 0-100 (higher = riskier)
+  score: number; // normalized 0-100 (higher = riskier)
+  weight: number;
 }
-interface EventRow {
+interface RiskAxisLive {
+  label: string;
+  score: number; // weighted composite 0-100
+  components: RiskComponentData[];
+  missing: string[]; // indicators unavailable for this country
+}
+interface RiskRadarData {
+  axes: RiskAxisLive[];
+  asOf: string | null;
+}
+/* Live upcoming events (see /api/country/events + lib/eventsData.ts) */
+interface LiveEvent {
   title: string;
-  when: string;
+  date: string; // ISO release timestamp
   impact: "High" | "Medium" | "Low";
+  source: string | null;
+  sourceUrl: string | null;
+}
+interface EventsData {
+  events: LiveEvent[];
+  asOf: string | null;
 }
 interface SectorRank {
   name: string;
@@ -153,11 +228,8 @@ interface Brain {
   summary: string;
   tags: string[];
   drivers: Driver[];
-  sectors: SectorImpact[];
   macro: Metric[];
   forecast: Forecast[];
-  risks: RiskAxis[];
-  events: EventRow[];
   ranking: SectorRank[];
   flows: { fiiNet: number; diiNet: number; unit: string };
   news: NewsRow[];
@@ -192,6 +264,32 @@ const SENTS: Sentiment[] = [
   "Strong Bullish",
 ];
 
+/* Reference peer figures for the comparison table. The two peers shown are
+ * always drawn from this list minus the selected country, so a column (and its
+ * React key) can never duplicate the selected country's. */
+const PEER_STATS: { name: string; growth: string; inflation: string; rate: string; outlook: string }[] = [
+  { name: "USA", growth: "2.5%", inflation: "3.1%", rate: "4.50%", outlook: "Neutral" },
+  { name: "China", growth: "4.8%", inflation: "0.6%", rate: "3.10%", outlook: "Neutral" },
+  { name: "Germany", growth: "1.2%", inflation: "2.4%", rate: "2.15%", outlook: "Neutral" },
+];
+
+function buildCompare(
+  nm: string,
+  between: (a: number, b: number, dp?: number) => number,
+  overall: Sentiment,
+): { headers: string[]; rows: CompareRow[] } {
+  const peers = PEER_STATS.filter((p) => p.name !== nm).slice(0, 2);
+  return {
+    headers: [nm, ...peers.map((p) => p.name)],
+    rows: [
+      { metric: "Growth", values: [`${between(5, 8, 1)}%`, ...peers.map((p) => p.growth)] },
+      { metric: "Inflation", values: [`${between(3, 5, 1)}%`, ...peers.map((p) => p.inflation)] },
+      { metric: "Policy Rate", values: [`${between(5, 7, 2)}%`, ...peers.map((p) => p.rate)] },
+      { metric: "Outlook", values: [overall.replace("Strong ", ""), ...peers.map((p) => p.outlook)] },
+    ],
+  };
+}
+
 function buildBrain(country: Country): Brain {
   const r = seeded(country.code);
   const pick = <T,>(arr: T[]) => arr[Math.floor(r() * arr.length)];
@@ -224,16 +322,6 @@ function buildBrain(country: Country): Brain {
       { label: "Earnings", detail: "Beats outnumber misses", tone: "up" },
       { label: "Currency", detail: "Range-bound, stable", tone: "flat" },
     ],
-    sectors: [
-      { name: "Banks", s: "Bullish" },
-      { name: "IT", s: "Neutral" },
-      { name: "Real Estate", s: "Bullish" },
-      { name: "Autos", s: "Bullish" },
-      { name: "Pharma", s: "Neutral" },
-      { name: "Energy", s: "Bullish" },
-      { name: "FMCG", s: "Neutral" },
-      { name: "Metals", s: "Bearish" },
-    ],
     macro: [
       { key: "gdp", label: "GDP Growth", value: "…", sub: "YoY", tone: "up" },
       { key: "inflation", label: "Inflation", value: "…", sub: "CPI", tone: "flat" },
@@ -245,8 +333,8 @@ function buildBrain(country: Country): Brain {
       { key: "vix", label: "Volatility", value: VIX_COUNTRIES.has(country.code) ? "…" : "N/A", sub: "VIX", tone: "flat" },
       { key: "indexpe", label: "Index PE", value: NO_INDEX_VALUATION.has(country.code) ? "N/A" : "…", sub: "Trailing", tone: "flat" },
       { key: "indexpb", label: "Index PB", value: NO_INDEX_VALUATION.has(country.code) ? "N/A" : "…", sub: "Price/Book", tone: "flat" },
-      { label: "Market Cap", value: `$${between(3, 5, 1)}T`, sub: "Total", tone: "up" },
-      { label: "Current A/C", value: `${between(-2, 1, 1)}%`, sub: "of GDP", tone: "down" },
+      { key: "marketcap", label: "Market Cap", value: NO_INDEX_VALUATION.has(country.code) ? "N/A" : "…", sub: "Total", tone: "flat" },
+      { key: "account", label: "Current A/C", value: "…", sub: "of GDP", tone: "flat" },
     ],
     forecast: [
       { horizon: "24 Hours", s: pick(SENTS.slice(2)), conf: between(60, 85) },
@@ -254,19 +342,6 @@ function buildBrain(country: Country): Brain {
       { horizon: "30 Days", s: "Neutral", conf: between(55, 75) },
       { horizon: "6 Months", s: "Bullish", conf: between(65, 88) },
       { horizon: "1 Year", s: overall, conf: between(70, 92) },
-    ],
-    risks: [
-      { label: "Currency", level: between(25, 70) },
-      { label: "Inflation", level: between(20, 60) },
-      { label: "Geopolitical", level: between(30, 75) },
-      { label: "Liquidity", level: between(15, 50) },
-      { label: "Policy", level: between(20, 55) },
-    ],
-    events: [
-      { title: "Central Bank Policy", when: "In 3 days", impact: "High" },
-      { title: "CPI Inflation Data", when: "In 5 days", impact: "High" },
-      { title: "GDP Growth Print", when: "In 12 days", impact: "Medium" },
-      { title: "Global Rate Decision", when: "In 18 days", impact: "Medium" },
     ],
     ranking: [
       { name: "Banks", changePct: between(1, 4, 2), spark: spark() },
@@ -284,15 +359,7 @@ function buildBrain(country: Country): Brain {
       { title: "Manufacturing PMI holds in expansion", source: "IndexPulse", when: "2h", tone: "up" },
       { title: "Currency steadies within recent range", source: "FXWatch", when: "3h", tone: "flat" },
     ],
-    compare: {
-      headers: [nm, "USA", "China"],
-      rows: [
-        { metric: "Growth", values: [`${between(5, 8, 1)}%`, "2.5%", "4.8%"] },
-        { metric: "Inflation", values: [`${between(3, 5, 1)}%`, "3.1%", "0.6%"] },
-        { metric: "Policy Rate", values: [`${between(5, 7, 2)}%`, "4.50%", "3.10%"] },
-        { metric: "Outlook", values: [overall.replace("Strong ", ""), "Neutral", "Neutral"] },
-      ],
-    },
+    compare: buildCompare(nm, between, overall),
     correlations: [
       { label: "Crude Oil", value: between(-80, -30) / 100 },
       { label: "US 10Y", value: between(-70, -20) / 100 },
@@ -362,11 +429,11 @@ function fmtIndicator(li: LiveIndicator, key?: string): string {
     const d = v >= 1000 ? 0 : v >= 10 ? 2 : 4;
     return v.toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
   }
-  if (key === "deficit") {
-    // Budget balance — always show the sign (+ surplus, − deficit).
+  if (key === "deficit" || key === "account") {
+    // Balances — always show the sign (+ surplus, − deficit).
     return `${li.value > 0 ? "+" : ""}${Number(li.value.toFixed(2))}${li.unit}`;
   }
-  if (key === "reserves") {
+  if (key === "reserves" || key === "marketcap") {
     const v = li.value; // absolute USD
     if (v >= 1e12) return `$${(v / 1e12).toFixed(2)}T`;
     if (v >= 1e9) return `$${(v / 1e9).toFixed(0)}B`;
@@ -376,6 +443,20 @@ function fmtIndicator(li: LiveIndicator, key?: string): string {
   if (key === "indexpe") return li.value.toFixed(1);
   if (key === "indexpb") return li.value.toFixed(2);
   return `${Number(li.value.toFixed(2))}${li.unit}`;
+}
+
+/**
+ * Index P/B valuation bands for a country/market index: lower = cheaper.
+ *   <1.0 dark green (Deeply Undervalued) · 1.0–1.5 green (Undervalued) ·
+ *   1.5–2.5 yellow (Fairly Valued) · 2.5–3.5 orange (Slightly Overvalued) ·
+ *   ≥3.5 red (Overvalued).
+ */
+function pbBand(v: number): { tone: Tone; label: string } {
+  if (v < 1) return { tone: "deepup", label: "Deeply Undervalued" };
+  if (v < 1.5) return { tone: "up", label: "Undervalued" };
+  if (v < 2.5) return { tone: "flat", label: "Fairly Valued" };
+  if (v < 3.5) return { tone: "warn", label: "Slightly Overvalued" };
+  return { tone: "down", label: "Overvalued" };
 }
 
 /**
@@ -412,8 +493,14 @@ function toneForMetric(key: string | undefined, li: LiveIndicator, code: string)
     // yellow −3% to −6% (moderate), red < −6% (high risk).
     return li.value >= -3 ? "up" : li.value >= -6 ? "flat" : "down";
   }
-  // Policy rate, volatility and valuation levels are neutral until a rule is set.
-  if (key === "policy" || key === "vix" || key === "indexpe" || key === "indexpb") return "flat";
+  if (key === "account") {
+    // Current account % of GDP: green surplus, yellow mild deficit (to −3%),
+    // red beyond — the classic sustainability threshold.
+    return li.value > 0 ? "up" : li.value >= -3 ? "flat" : "down";
+  }
+  if (key === "indexpb") return pbBand(li.value).tone;
+  // Policy rate, volatility, P/E and market-cap levels are neutral until a rule is set.
+  if (key === "policy" || key === "vix" || key === "indexpe" || key === "marketcap") return "flat";
   return li.value > 0.05 ? "up" : li.value < -0.05 ? "down" : "flat";
 }
 
@@ -504,33 +591,353 @@ function Gauge({ value, tone }: { value: number; tone: Tone }) {
   );
 }
 
-/* Risk radar (5 axes) */
-function Radar({ axes }: { axes: RiskAxis[] }) {
+/* ------------------------- Live risk radar ------------------------------- */
+
+/** Poll the live risk endpoint (server caches 10 min; poll picks up syncs). */
+function useLiveRisk(code: string, name: string): RiskRadarData | null {
+  const [data, setData] = useState<RiskRadarData | null>(null);
+  useEffect(() => {
+    let alive = true;
+    let timer: ReturnType<typeof setTimeout>;
+    setData(null);
+    const tick = async () => {
+      try {
+        const r = await fetch(
+          `/api/country/risk?code=${code}&name=${encodeURIComponent(name)}`,
+          { cache: "no-store" },
+        ).then((res) => res.json());
+        if (alive && r?.axes?.length) setData(r);
+      } catch {
+        /* keep last good radar */
+      }
+      if (alive) timer = setTimeout(tick, 60_000);
+    };
+    tick();
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [code, name]);
+  return data;
+}
+
+/** Poll the live sector-impact endpoint (server caches 10 min). */
+function useLiveSectors(code: string): SectorImpactData | null {
+  const [data, setData] = useState<SectorImpactData | null>(null);
+  useEffect(() => {
+    let alive = true;
+    let timer: ReturnType<typeof setTimeout>;
+    setData(null);
+    const tick = async () => {
+      try {
+        const r = await fetch(`/api/country/sectors?code=${code}`, { cache: "no-store" }).then(
+          (res) => res.json(),
+        );
+        if (alive && r?.sectors?.length) setData(r);
+      } catch {
+        /* keep last good scores */
+      }
+      if (alive) timer = setTimeout(tick, 60_000);
+    };
+    tick();
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [code]);
+  return data;
+}
+
+/**
+ * Tick-by-tick stream of the India sector→index list. Every websocket tick the
+ * server receives is pushed here over SSE the instant it lands; a full NSE
+ * snapshot (OHLC, 52W, P/E, breadth) refreshes the rest every minute.
+ * EventSource reconnects automatically if the connection drops. IN only.
+ */
+function useSectorIndexStream(code: string): SectorIndexListData | null {
+  const [data, setData] = useState<SectorIndexListData | null>(null);
+  useEffect(() => {
+    setData(null);
+    if (code !== "IN") return;
+    const es = new EventSource(`/api/country/sector-index/stream?code=${code}`);
+    es.addEventListener("snapshot", (e) => {
+      try {
+        const r = JSON.parse((e as MessageEvent).data) as SectorIndexListData;
+        if (!r?.sectors?.length) return;
+        // Keep newer tick prices if a stale-cached snapshot arrives mid-stream.
+        setData((prev) => {
+          if (!prev) return r;
+          const old = new Map(prev.sectors.map((s) => [s.id, s]));
+          return {
+            ...r,
+            sectors: r.sectors.map((s) => {
+              const o = old.get(s.id);
+              return o?.tickTs && o.tickTs > Date.now() - 10_000
+                ? { ...s, last: o.last, change: o.change, changePct: o.changePct, live: true, tickTs: o.tickTs }
+                : s;
+            }),
+          };
+        });
+      } catch {
+        /* malformed frame — ignore */
+      }
+    });
+    es.addEventListener("tick", (e) => {
+      try {
+        const t = JSON.parse((e as MessageEvent).data) as {
+          id: string;
+          last: number;
+          change: number;
+          changePct: number;
+          ts: number;
+        };
+        setData((prev) =>
+          prev
+            ? {
+                ...prev,
+                sectors: prev.sectors.map((s) =>
+                  s.id === t.id
+                    ? {
+                        ...s,
+                        last: t.last,
+                        change: t.change,
+                        changePct: t.changePct,
+                        high: Math.max(s.high, t.last),
+                        low: s.low > 0 ? Math.min(s.low, t.last) : s.low,
+                        live: true,
+                        tickTs: t.ts,
+                      }
+                    : s,
+                ),
+              }
+            : prev,
+        );
+      } catch {
+        /* malformed frame — ignore */
+      }
+    });
+    return () => es.close();
+  }, [code]);
+  return data;
+}
+
+/** Poll one sector's full index detail + live headlines while a popup is open. */
+function useSectorIndexDetail(code: string, id: string | null): SectorIndexDetailData | null {
+  const [data, setData] = useState<SectorIndexDetailData | null>(null);
+  useEffect(() => {
+    setData(null);
+    if (!id) return;
+    let alive = true;
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = async () => {
+      try {
+        const r = await fetch(`/api/country/sector-index?code=${code}&id=${id}`, {
+          cache: "no-store",
+        }).then((res) => res.json());
+        if (alive && r?.detail) setData(r);
+      } catch {
+        /* keep last good detail */
+      }
+      if (alive) timer = setTimeout(tick, 30_000);
+    };
+    tick();
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [code, id]);
+  return data;
+}
+
+/** Poll the upcoming-events endpoint (server caches 30 min). */
+function useLiveEvents(code: string): EventsData | null {
+  const [data, setData] = useState<EventsData | null>(null);
+  useEffect(() => {
+    let alive = true;
+    let timer: ReturnType<typeof setTimeout>;
+    setData(null);
+    const tick = async () => {
+      try {
+        const r = await fetch(`/api/country/events?code=${code}`, { cache: "no-store" }).then(
+          (res) => res.json(),
+        );
+        if (alive && r?.events?.length) setData(r);
+      } catch {
+        /* keep last good list */
+      }
+      if (alive) timer = setTimeout(tick, 10 * 60_000);
+    };
+    tick();
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [code]);
+  return data;
+}
+
+/** Compact host for a source link ("https://www.bls.gov" -> "bls.gov"). */
+function hostLabel(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+}
+
+/** "Today 18:30" / "Tomorrow" / "In 12 days · Jul 25". */
+function whenLabel(iso: string): string {
+  const d = new Date(iso);
+  const today = new Date();
+  if (d.toDateString() === today.toDateString()) {
+    return `Today ${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+  }
+  const tomorrow = new Date(today.getTime() + 86_400_000);
+  if (d.toDateString() === tomorrow.toDateString()) return "Tomorrow";
+  const days = Math.round(
+    (new Date(d.toDateString()).getTime() - new Date(today.toDateString()).getTime()) / 86_400_000,
+  );
+  return `In ${days} days · ${d.toLocaleDateString([], { month: "short", day: "numeric" })}`;
+}
+
+/** Hover breakdown for a sector row (native tooltip). */
+function sectorTitle(s: SectorLive): string {
+  return [
+    `${s.name} — ${s.score}/100 (${s.sentiment})`,
+    ...s.components.map((c) => `${c.label}: ${c.score} × ${Math.round(c.weight * 100)}%`),
+  ].join("\n");
+}
+
+/** Risk band → colour + wording (0 safest, 100 riskiest). */
+function riskBand(score: number): { color: string; label: string } {
+  if (score <= 20) return { color: "#0ca678", label: "Very Low Risk" };
+  if (score <= 40) return { color: "#38d39f", label: "Low Risk" };
+  if (score <= 60) return { color: "#f5c451", label: "Moderate Risk" };
+  if (score <= 80) return { color: "#ff9f45", label: "High Risk" };
+  return { color: "#ff5d5d", label: "Extreme Risk" };
+}
+
+/** Smoothly tween an array of values whenever the target changes. */
+function useTweened(target: number[], ms = 700): number[] {
+  const [vals, setVals] = useState(target);
+  const current = useRef(target);
+  const key = target.join(",");
+  useEffect(() => {
+    const from = current.current.length === target.length ? current.current : target;
+    const to = target;
+    let raf = 0;
+    const t0 = performance.now();
+    const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+    const step = (now: number) => {
+      const p = Math.min(1, (now - t0) / ms);
+      const e = ease(p);
+      const cur = to.map((v, i) => from[i] + (v - from[i]) * e);
+      current.current = cur;
+      setVals(cur);
+      if (p < 1) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, ms]);
+  return vals;
+}
+
+function agoLabel(iso: string | null): string {
+  if (!iso) return "";
+  const mins = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60_000));
+  return mins < 1 ? "just now" : `${mins} min ago`;
+}
+
+/** Animated radar with per-axis hover tooltips and risk-banded colouring. */
+function RiskRadar({ axes, asOf }: { axes: RiskAxisLive[]; asOf: string | null }) {
+  const [hover, setHover] = useState<number | null>(null);
+  const levels = useTweened(axes.map((a) => a.score));
   const cx = 100, cy = 96, R = 74, n = axes.length;
   const ang = (i: number) => -Math.PI / 2 + (i * 2 * Math.PI) / n;
-  const pt = (i: number, rad: number) => [cx + rad * Math.cos(ang(i)), cy + rad * Math.sin(ang(i))];
-  const ring = (frac: number) =>
-    axes.map((_, i) => pt(i, R * frac).join(",")).join(" ");
-  const shape = axes.map((a, i) => pt(i, (R * a.level) / 100).join(",")).join(" ");
+  const pt = (i: number, rad: number): [number, number] => [
+    cx + rad * Math.cos(ang(i)),
+    cy + rad * Math.sin(ang(i)),
+  ];
+  const ring = (frac: number) => axes.map((_, i) => pt(i, R * frac).join(",")).join(" ");
+  const shape = levels.map((v, i) => pt(i, (R * Math.min(100, Math.max(0, v))) / 100).join(",")).join(" ");
+  const avg = axes.reduce((s, a) => s + a.score, 0) / Math.max(1, n);
+  const band = riskBand(avg);
+  const tipAxis = hover != null ? axes[hover] : null;
+  const tipPos = hover != null ? pt(hover, (R * axes[hover].score) / 100) : null;
+
   return (
-    <svg viewBox="0 0 200 200" className="cbd-radar" aria-hidden>
-      {[0.25, 0.5, 0.75, 1].map((f) => (
-        <polygon key={f} points={ring(f)} className="cbd-radar-grid" />
-      ))}
-      {axes.map((_, i) => {
-        const [x, y] = pt(i, R);
-        return <line key={i} x1={cx} y1={cy} x2={x} y2={y} className="cbd-radar-grid" />;
-      })}
-      <polygon points={shape} className="cbd-radar-shape" />
-      {axes.map((a, i) => {
-        const [x, y] = pt(i, R + 12);
-        return (
-          <text key={a.label} x={x} y={y} className="cbd-radar-label" textAnchor="middle" dominantBaseline="middle">
-            {a.label}
-          </text>
-        );
-      })}
-    </svg>
+    <div className="cbd-radar-wrap">
+      <svg viewBox="0 0 200 200" className="cbd-radar">
+        {[0.25, 0.5, 0.75, 1].map((f) => (
+          <polygon key={f} points={ring(f)} className="cbd-radar-grid" />
+        ))}
+        {axes.map((_, i) => {
+          const [x, y] = pt(i, R);
+          return <line key={i} x1={cx} y1={cy} x2={x} y2={y} className="cbd-radar-grid" />;
+        })}
+        <polygon
+          points={shape}
+          className="cbd-radar-shape live"
+          style={{ fill: `${band.color}2E`, stroke: band.color }}
+        />
+        {axes.map((a, i) => {
+          const [x, y] = pt(i, (R * levels[i]) / 100);
+          const c = riskBand(a.score).color;
+          return (
+            <circle
+              key={a.label}
+              cx={x}
+              cy={y}
+              r={hover === i ? 4.5 : 3}
+              className="cbd-radar-dot"
+              style={{ fill: c }}
+            />
+          );
+        })}
+        {axes.map((a, i) => {
+          const [x, y] = pt(i, R + 12);
+          return (
+            <text key={a.label} x={x} y={y} className="cbd-radar-label" textAnchor="middle" dominantBaseline="middle">
+              {a.label}
+            </text>
+          );
+        })}
+        {/* Invisible hover targets (drawn last so they win hit-testing). */}
+        {axes.map((a, i) => {
+          const [x, y] = pt(i, (R * a.score) / 100);
+          return (
+            <circle
+              key={a.label}
+              cx={x}
+              cy={y}
+              r={13}
+              className="cbd-radar-hit"
+              onMouseEnter={() => setHover(i)}
+              onMouseLeave={() => setHover(null)}
+            />
+          );
+        })}
+      </svg>
+      {tipAxis && tipPos && (
+        <div
+          className="cbd-radar-tip"
+          style={{ left: `${(tipPos[0] / 200) * 100}%`, top: `${(tipPos[1] / 200) * 100}%` }}
+        >
+          <b>{tipAxis.label} Risk</b>
+          <div className="cbd-radar-tip-score" style={{ color: riskBand(tipAxis.score).color }}>
+            Score: {tipAxis.score} · {riskBand(tipAxis.score).label}
+          </div>
+          {tipAxis.components.map((c) => (
+            <div key={c.label} className="cbd-radar-tip-row">
+              <span>{c.label}</span>
+              <b>{c.score}</b>
+            </div>
+          ))}
+          <div className="cbd-radar-tip-upd">Updated {agoLabel(asOf)}</div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -595,6 +1002,184 @@ function AreaLine({ data }: { data: number[] }) {
   );
 }
 
+/* ------------------------ Sector index detail popup ----------------------- */
+
+const fmtIN = (n: number, d = 2) =>
+  n.toLocaleString("en-IN", { minimumFractionDigits: d, maximumFractionDigits: d });
+
+/** "14:23:05.412" — millisecond-precision stamp of the last websocket tick. */
+const tickStamp = (ts: number) => {
+  const d = new Date(ts);
+  return `${d.toLocaleTimeString([], { hour12: false })}.${String(d.getMilliseconds()).padStart(3, "0")}`;
+};
+
+/** "2 h ago" / "35 min ago" / "Jul 12" from an RSS pubDate. */
+function newsAgo(pubDate: string): string {
+  const t = new Date(pubDate).getTime();
+  if (Number.isNaN(t)) return "";
+  const mins = Math.max(0, Math.round((Date.now() - t) / 60_000));
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs} h ago`;
+  return new Date(t).toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+function PerfChip({ label, value }: { label: string; value: number | null }) {
+  return (
+    <div className={`cbd-si-perf ${value == null ? "" : value >= 0 ? "up" : "down"}`}>
+      <span>{label}</span>
+      <b>{value == null ? "—" : fmtPct(value)}</b>
+    </div>
+  );
+}
+
+function SectorIndexModal({
+  code,
+  sector,
+  onClose,
+}: {
+  code: string;
+  sector: SectorIndexQuote;
+  onClose: () => void;
+}) {
+  const data = useSectorIndexDetail(code, sector.id);
+  // Detail supplies the slow-moving fields (P/E, breadth, news); the streamed
+  // `sector` prop overrides price fields so the popup ticks in real time.
+  const base = data?.detail ?? sector;
+  const d: SectorIndexQuote = {
+    ...base,
+    last: sector.last,
+    change: sector.change,
+    changePct: sector.changePct,
+    high: Math.max(base.high, sector.high),
+    low: base.low > 0 && sector.low > 0 ? Math.min(base.low, sector.low) : base.low || sector.low,
+    live: sector.live || base.live,
+    tickTs: sector.tickTs,
+  };
+  const tone = d.changePct >= 0 ? "up" : "down";
+
+  // Flash the price green/red on every tick so movement is visible.
+  const prevLast = useRef(d.last);
+  const [flash, setFlash] = useState("");
+  useEffect(() => {
+    if (d.last === prevLast.current) return;
+    setFlash(d.last > prevLast.current ? "flash-up" : "flash-down");
+    prevLast.current = d.last;
+    const t = setTimeout(() => setFlash(""), 500);
+    return () => clearTimeout(t);
+  }, [d.last]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = "";
+    };
+  }, [onClose]);
+
+  const stats: { label: string; value: string }[] = [
+    { label: "Open", value: fmtIN(d.open) },
+    { label: "Day High", value: fmtIN(d.high) },
+    { label: "Day Low", value: fmtIN(d.low) },
+    { label: "Prev Close", value: fmtIN(d.previousClose) },
+    { label: "52W High", value: fmtIN(d.yearHigh) },
+    { label: "52W Low", value: fmtIN(d.yearLow) },
+    { label: "P/E", value: d.pe == null ? "—" : fmtIN(d.pe) },
+    { label: "P/B", value: d.pb == null ? "—" : fmtIN(d.pb) },
+    { label: "Div Yield", value: d.divYield == null ? "—" : `${fmtIN(d.divYield)}%` },
+  ];
+
+  return (
+    <div className="modal-overlay cbd-si-overlay" onClick={onClose}>
+      <div className="modal cbd-si-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head cbd-si-head">
+          <div>
+            <div className="modal-title cbd-si-title">
+              {d.sector} <span className="cbd-si-index">· {d.indexName}</span>
+            </div>
+            <div className="modal-sub cbd-si-sub">
+              NSE · {d.nseSymbol}
+              {d.live && <span className="cbd-si-live"><i className="cbd-live-dot" /> LIVE</span>}
+            </div>
+          </div>
+          <button className="modal-close" onClick={onClose} aria-label="Close">✕</button>
+        </div>
+
+        <div className="modal-body cbd-si-body">
+          <div className="cbd-si-cols">
+            <div className="cbd-si-left">
+              <div className="cbd-si-hero">
+                <b className={`cbd-si-price ${tone} ${flash}`}>{fmtIN(d.last)}</b>
+                <span className={`cbd-si-chg ${tone}`}>
+                  {d.change >= 0 ? "+" : "−"}{fmtIN(Math.abs(d.change))} ({fmtPct(d.changePct)})
+                </span>
+                <span className="cbd-si-asof">
+                  {d.tickTs ? `tick ${tickStamp(d.tickTs)}` : data?.asOf ? `updated ${agoLabel(data.asOf)}` : ""}
+                </span>
+              </div>
+
+              <div className="cbd-si-perfrow">
+                <PerfChip label="1W" value={d.perChange1w} />
+                <PerfChip label="1M" value={d.perChange30d} />
+                <PerfChip label="1Y" value={d.perChange365d} />
+                {d.advances != null && d.declines != null && (
+                  <div className="cbd-si-perf breadth">
+                    <span>Breadth</span>
+                    <b>
+                      <em className="up">▲ {d.advances}</em> / <em className="down">▼ {d.declines}</em>
+                    </b>
+                  </div>
+                )}
+              </div>
+
+              <div className="cbd-si-stats">
+                {stats.map((s) => (
+                  <div key={s.label} className="cbd-si-stat">
+                    <span>{s.label}</span>
+                    <b>{s.value}</b>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="cbd-si-right">
+              <div className="cbd-si-news-head">
+                <span>Top {d.sector} News</span>
+                <small>Live · Google News</small>
+              </div>
+              {data ? (
+                data.news.length ? (
+                  <ul className="cbd-si-news">
+                    {data.news.map((n) => (
+                      <li key={n.link || n.title}>
+                        <a href={n.link} target="_blank" rel="noopener noreferrer">
+                          <b>{n.title}</b>
+                          <small>
+                            {n.source}
+                            {newsAgo(n.publishedAt) && <> · {newsAgo(n.publishedAt)}</>}
+                          </small>
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="cbd-si-news-empty">No recent headlines for this sector.</div>
+                )
+              ) : (
+                <div className="cbd-si-news-empty">Loading live headlines…</div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* =============================== Dashboard ============================== */
 
 export default function CountryBrain() {
@@ -602,14 +1187,26 @@ export default function CountryBrain() {
   const brain = useMemo(() => buildBrain(country), [country]);
   const liveKeys = useMemo(
     () => [
-      "gdp", "inflation", "policy", "fx", "deficit", "reserves",
+      "gdp", "inflation", "policy", "fx", "deficit", "reserves", "account",
       ...(NO_YIELD.has(country.code) ? [] : ["yield"]),
       ...(VIX_COUNTRIES.has(country.code) ? ["vix"] : []),
-      ...(NO_INDEX_VALUATION.has(country.code) ? [] : ["indexpe", "indexpb"]),
+      ...(NO_INDEX_VALUATION.has(country.code) ? [] : ["indexpe", "indexpb", "marketcap"]),
     ],
     [country.code],
   );
   const live = useLiveMacro(country.code, liveKeys, country.name);
+  const risk = useLiveRisk(country.code, country.name);
+  const sectorsLive = useLiveSectors(country.code);
+  const sectorIndices = useSectorIndexStream(country.code);
+  const [openSectorId, setOpenSectorId] = useState<string | null>(null);
+  // Live lookup: the modal re-renders on every tick of the streamed list.
+  const openSector = openSectorId
+    ? sectorIndices?.sectors.find((s) => s.id === openSectorId) ?? null
+    : null;
+  const eventsLive = useLiveEvents(country.code);
+
+  // Country switch closes any open sector popup.
+  useEffect(() => setOpenSectorId(null), [country.code]);
 
   return (
     <div className="wrap cbd-wrap">
@@ -665,7 +1262,7 @@ export default function CountryBrain() {
               const li = m.key ? live[m.key] : undefined;
               const value = li ? fmtIndicator(li, m.key) : m.value;
               const tone = li ? toneForMetric(m.key, li, country.code) : m.tone;
-              const sub = li?.detail ?? m.sub;
+              const sub = m.key === "indexpb" && li ? pbBand(li.value).label : li?.detail ?? m.sub;
               const title = li ? `${li.source} · ${new Date(li.asOf).toLocaleTimeString()}` : undefined;
               return (
                 <div key={m.label} className={`cbd-metric${li ? " live" : ""}`} title={title}>
@@ -681,28 +1278,79 @@ export default function CountryBrain() {
           </div>
         </Card>
 
-        <Card n={5} title="Risk Radar" hint="Live risk map" span={4} className="cbd-radar-card">
-          <Radar axes={brain.risks} />
-          <div className="cbd-risk-legend">
-            {brain.risks.map((rk) => (
-              <span key={rk.label}>
-                <i className={rk.level > 60 ? "down" : rk.level > 40 ? "flat" : "up"} />
-                {rk.label} {rk.level}
-              </span>
-            ))}
-          </div>
+        <Card
+          n={5}
+          title="Risk Radar"
+          hint={risk ? `Live · updated ${agoLabel(risk.asOf)}` : "Computing…"}
+          span={4}
+          className="cbd-radar-card"
+        >
+          {risk ? (
+            <>
+              <RiskRadar axes={risk.axes} asOf={risk.asOf} />
+              <div className="cbd-risk-legend">
+                {risk.axes.map((a) => (
+                  <span key={a.label}>
+                    <i style={{ background: riskBand(a.score).color }} />
+                    {a.label} {a.score}
+                  </span>
+                ))}
+              </div>
+            </>
+          ) : (
+            <div className="cbd-radar-loading">Computing live risk…</div>
+          )}
         </Card>
 
         {/* Row C — three even cards */}
-        <Card n={6} title="Sector Impact" hint="Macro → Sector" span={4}>
-          <div className="cbd-sectors">
-            {brain.sectors.map((s) => (
-              <div key={s.name} className="cbd-sector-row">
-                <span>{s.name}</span>
-                <Sent s={s.s} />
+        <Card
+          n={6}
+          title="Sector Impact"
+          hint={
+            country.code === "IN"
+              ? sectorIndices
+                ? "NSE · streaming ticks · click a sector"
+                : "Loading…"
+              : sectorsLive
+              ? "Live · scored 0-100"
+              : "Computing…"
+          }
+          span={4}
+        >
+          {country.code === "IN" ? (
+            sectorIndices ? (
+              <div className="cbd-sectors">
+                {sectorIndices.sectors.map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    className="cbd-sector-row cbd-sector-btn"
+                    title={`${s.indexName} — click for live index details & news`}
+                    onClick={() => setOpenSectorId(s.id)}
+                  >
+                    <span>{s.sector}</span>
+                    <span className="cbd-sector-open">›</span>
+                  </button>
+                ))}
               </div>
-            ))}
-          </div>
+            ) : (
+              <div className="cbd-radar-loading">Loading NSE sector indices…</div>
+            )
+          ) : sectorsLive ? (
+            <div className="cbd-sectors">
+              {sectorsLive.sectors.map((s) => (
+                <div key={s.name} className="cbd-sector-row" title={sectorTitle(s)}>
+                  <span>{s.name}</span>
+                  <span className="cbd-sector-right">
+                    <b className="cbd-sector-score">{s.score}</b>
+                    <Sent s={s.sentiment} />
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="cbd-radar-loading">Computing live sector scores…</div>
+          )}
         </Card>
 
         <Card n={7} title="AI Forecast" hint="By horizon" span={4}>
@@ -717,18 +1365,39 @@ export default function CountryBrain() {
           </div>
         </Card>
 
-        <Card n={8} title="Upcoming Events" hint="Calendar" span={4}>
-          <ul className="cbd-events">
-            {brain.events.map((e) => (
-              <li key={e.title}>
-                <span className="cbd-ev-main">
-                  <b>{e.title}</b>
-                  <small>{e.when}</small>
-                </span>
-                <span className={`cbd-impact ${e.impact.toLowerCase()}`}>{e.impact}</span>
-              </li>
-            ))}
-          </ul>
+        <Card
+          n={8}
+          title="Upcoming Events"
+          hint={eventsLive ? "Live calendar · top 5" : "Loading…"}
+          span={4}
+        >
+          {eventsLive ? (
+            <ul className="cbd-events">
+              {eventsLive.events.map((e) => (
+                <li key={`${e.title}${e.date}`}>
+                  <span className="cbd-ev-main">
+                    <b>{e.title}</b>
+                    <small>{whenLabel(e.date)}</small>
+                  </span>
+                  {e.sourceUrl ? (
+                    <a
+                      className="cbd-ev-src"
+                      href={e.sourceUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={e.source ?? e.sourceUrl}
+                    >
+                      {hostLabel(e.sourceUrl)} ↗
+                    </a>
+                  ) : (
+                    <span className="cbd-ev-src plain">{e.source ?? "—"}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="cbd-radar-loading">Loading calendar…</div>
+          )}
         </Card>
 
         {/* Row D — three even cards */}
@@ -767,6 +1436,7 @@ export default function CountryBrain() {
             <span><i className="down" /> Sell {brain.conviction.sell}%</span>
           </div>
         </Card>
+
 
         {/* Row E — Ask (tall) | Opportunities (fills to match) */}
         <Card n={12} title={`Ask ${country.name} Brain`} hint="Live AI" span={6} className="cbd-ask-card">
@@ -882,6 +1552,14 @@ export default function CountryBrain() {
           </div>
         </Card>
       </div>
+
+      {openSector && (
+        <SectorIndexModal
+          code={country.code}
+          sector={openSector}
+          onClose={() => setOpenSectorId(null)}
+        />
+      )}
     </div>
   );
 }

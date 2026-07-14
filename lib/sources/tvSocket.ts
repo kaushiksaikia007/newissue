@@ -13,6 +13,16 @@ const ORIGIN = "https://www.tradingview.com";
 
 const quotes = new Map<string, Quote>();
 const subscribed = new Set<string>();
+
+/** Tick fan-out: SSE streams register here to get every quote the instant it lands. */
+type TickListener = (symbol: string, q: Quote) => void;
+const tickListeners = new Set<TickListener>();
+
+/** Subscribe to every incoming tick; returns an unsubscribe function. */
+export function subscribeTicks(fn: TickListener): () => void {
+  tickListeners.add(fn);
+  return () => tickListeners.delete(fn);
+}
 const session = "qs_" + Math.random().toString(36).slice(2, 12);
 
 let ws: WebSocket | null = null;
@@ -93,7 +103,15 @@ function handle(raw: string): void {
     const price = typeof v.lp === "number" ? v.lp : prev?.price;
     if (price == null || Number.isNaN(price)) continue;
     const change = typeof v.ch === "number" ? v.ch : (prev?.change ?? 0);
-    quotes.set(sym, { price, change, ts: Date.now() });
+    const q: Quote = { price, change, ts: Date.now() };
+    quotes.set(sym, q);
+    for (const fn of tickListeners) {
+      try {
+        fn(sym, q);
+      } catch {
+        /* one bad listener must not break the stream */
+      }
+    }
   }
 }
 

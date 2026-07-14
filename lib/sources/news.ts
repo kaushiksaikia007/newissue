@@ -77,6 +77,18 @@ export function getNews(): Promise<NewsItem[]> {
   return fetchFeed("gold", GOLD_QUERY, "US");
 }
 
+/**
+ * Live headlines for an arbitrary query (cached 10 min per id). Used by the
+ * sector-index popups; never throws.
+ */
+export function searchNews(
+  id: string,
+  query: string,
+  region: "US" | "IN" = "IN",
+): Promise<NewsItem[]> {
+  return fetchFeed(id, query, region);
+}
+
 /** Nifty 50 / Indian market headlines. */
 export function getNiftyNews(): Promise<NewsItem[]> {
   return fetchFeed("nifty", NIFTY_QUERY, "IN");

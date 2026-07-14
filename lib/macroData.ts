@@ -56,7 +56,7 @@ interface IndicatorSpec {
  * TradingView's `ECONOMICS:<CC>INTR` series.
  */
 /** The local currency each country's FX rate is quoted against USD. */
-const CURRENCY_BY_CODE: Record<string, string> = {
+export const CURRENCY_BY_CODE: Record<string, string> = {
   IN: "INR", US: "USD", CN: "CNY", JP: "JPY", DE: "EUR", GB: "GBP",
   FR: "EUR", CA: "CAD", AU: "AUD", BR: "BRL", RU: "RUB", KR: "KRW",
   IT: "EUR", ES: "EUR", MX: "MXN", ID: "IDR", SA: "SAR", AE: "AED",
@@ -126,6 +126,16 @@ export const INDICATORS: Record<string, IndicatorSpec> = {
     webQuery: (country) =>
       `${country} government budget balance as percent of GDP, latest fiscal year`,
   },
+  account: {
+    label: "Current A/C",
+    unit: "%",
+    decimals: 2,
+    // Current account balance (% of GDP): a deficit is NEGATIVE, a surplus
+    // POSITIVE — shown with its sign so the direction is explicit.
+    tvSymbol: (code) => `ECONOMICS:${code.toUpperCase()}CAG`,
+    webQuery: (country) =>
+      `${country} current account balance as percent of GDP, latest`,
+  },
   vix: {
     label: "Volatility",
     unit: "",
@@ -153,6 +163,20 @@ export const INDICATORS: Record<string, IndicatorSpec> = {
       `${country} benchmark stock market index price to book ratio, current`,
     custom: (code, country) => indexPbData(code, country),
     ttl: 10 * 60_000, // valuations move slowly — cache 10 min
+  },
+  marketcap: {
+    label: "Market Cap",
+    unit: "",
+    decimals: 0,
+    // Fully handled by the bespoke resolver (full-universe USD sum). No web
+    // fallback: free-text extraction can't reliably carry trillion/billion
+    // scale, and a wrong order of magnitude is worse than a stale value.
+    tvSymbol: () => "",
+    webQuery: (country) =>
+      `${country} total stock market capitalization of listed domestic companies in US dollars`,
+    custom: (code) => totalMarketCapData(code),
+    detail: () => "All listed, USD",
+    ttl: 10 * 60_000, // full-universe scan — cache 10 min
   },
   reserves: {
     label: "FX Reserves",
@@ -204,12 +228,39 @@ type Source = (
   spec: IndicatorSpec,
 ) => Promise<LiveIndicator | null>;
 
-/** Primary: TradingView's Economics feed — one scanner call, structured value. */
+/* Micro-batch: the tvSymbol-based indicators of one dashboard tick (GDP,
+ * inflation, policy, deficit, yield, FX, …) are requested together, so
+ * coalesce symbols that arrive within a few ms into ONE scanner call instead
+ * of one HTTP request per tile — the dashboard polls every second, and
+ * per-tile requests are what got the scanner rate-limited (HTTP 429). */
+const BATCH_COLS = ["close", "change", "Perf.Y"];
+let batchQueue: { symbol: string; resolve: (d: (number | null)[] | undefined) => void }[] = [];
+let batchTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scanBatched(symbol: string): Promise<(number | null)[] | undefined> {
+  return new Promise((resolve) => {
+    batchQueue.push({ symbol, resolve });
+    if (batchTimer) return;
+    batchTimer = setTimeout(async () => {
+      const queued = batchQueue;
+      batchQueue = [];
+      batchTimer = null;
+      try {
+        const symbols = [...new Set(queued.map((q) => q.symbol))];
+        const rows = await tradingviewScanCols(symbols, BATCH_COLS, "global");
+        for (const q of queued) q.resolve(rows.get(q.symbol));
+      } catch {
+        for (const q of queued) q.resolve(undefined);
+      }
+    }, 25);
+  });
+}
+
+/** Primary: TradingView's Economics feed — one (batched) scanner call. */
 const fromTradingView: Source = async (code, _country, spec) => {
   const symbol = spec.tvSymbol(code);
   if (!symbol) return null;
-  const rows = await tradingviewScanCols([symbol], ["close", "change", "Perf.Y"], "global");
-  const d = rows.get(symbol);
+  const d = await scanBatched(symbol);
   if (!d || typeof d[0] !== "number") return null;
   const raw = d[0];
   return {
@@ -396,7 +447,7 @@ const TV_COUNTRY: Record<string, string> = {
 function normCompany(desc: string): string {
   const base = desc
     .toLowerCase()
-    .split(/\b(class|deposit|deposito|depositor?y|depositary|adr|gdr|sponsored|series|pfd|preferred|registered|non.?voting)\b/)[0];
+    .split(/\b(class|deposit|deposito|depositor?y|depositary|adr|gdr|sponsored|series|pfd|preferred|registered|non.?voting|temp|bearer|participation)\b/)[0];
   return base.replace(/[^a-z0-9]+/g, " ").trim();
 }
 
@@ -484,6 +535,58 @@ async function indexPeData(code: string): Promise<LiveIndicator | null> {
     unit: "",
     asOf: new Date().toISOString(),
     source: "TradingView (cap-weighted, top domestic)",
+  };
+}
+
+/* ---------------------- Total market cap (bespoke) ----------------------- */
+// Total market capitalisation of ALL listed domestic companies:
+//   Σ market cap over the country's entire common-stock universe, converted to
+//   USD by TradingView's own price conversion (no hand-rolled FX math), with
+//   multi-exchange / share-class listings deduped to one entry per company.
+// Preference shares are excluded — TradingView reports the PARENT company's
+// full market cap on each preferred line, so counting them would double-count.
+
+async function totalMarketCapData(code: string): Promise<LiveIndicator | null> {
+  const cc = code.toUpperCase();
+  const slug = COUNTRY_SCREENER[cc];
+  const country = TV_COUNTRY[cc];
+  if (!slug || !country) return null;
+
+  const rows = await tradingviewScreen(slug, ["description", "market_cap_basic"], {
+    filter: [
+      { left: "type", operation: "equal", right: "stock" },
+      { left: "subtype", operation: "in_range", right: ["common"] },
+      { left: "country", operation: "equal", right: country },
+      { left: "market_cap_basic", operation: "nempty" },
+    ],
+    range: [0, 20000],
+    toCurrency: "usd",
+  });
+
+  // One entry per company: listings on other venues repeat the same
+  // company-level market cap, so keep the largest figure seen per key.
+  const byCompany = new Map<string, number>();
+  for (const r of rows) {
+    const [desc, mcap] = r.values;
+    if (typeof mcap !== "number" || mcap <= 0) continue;
+    const key = normCompany(typeof desc === "string" ? desc : "");
+    if (!key) continue;
+    const prev = byCompany.get(key);
+    if (prev == null || mcap > prev) byCompany.set(key, mcap);
+  }
+
+  let total = 0;
+  for (const mcap of byCompany.values()) total += mcap;
+  // A handful of rows means the screener glitched — don't publish a figure.
+  if (total <= 0 || byCompany.size < 20) return null;
+
+  return {
+    value: total,
+    changePct: null,
+    yoyPct: null,
+    unit: "",
+    asOf: new Date().toISOString(),
+    source: `TradingView (Σ ${byCompany.size.toLocaleString()} listed companies, USD)`,
   };
 }
 

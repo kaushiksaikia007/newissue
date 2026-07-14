@@ -3,7 +3,14 @@
     "allow": [
       "Bash(break)",
       "Bash(node -e ' *)",
-      "Bash(node pbtest2.mjs)"
+      "Bash(node pbtest2.mjs)",
+      "Bash(npx tsc *)",
+      "Bash(curl -s -o /dev/null -w '%{http_code}' -X POST 'https://scanner.tradingview.com/global/scan' -H 'Content-Type: application/json' -H 'User-Agent: Mozilla/5.0' -d '{\"symbols\":{\"tickers\":[\"ECONOMICS:INGDPYY\"]},\"columns\":[\"close\"]}')",
+      "Bash(npm run *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" \"http://localhost:3179/api/country/risk?code=IN&name=India\")",
+      "Bash(curl -s \"http://localhost:3179/api/country/risk?code=IN&name=India\")",
+      "Bash(rm -f \"/d/Newissue Data/README.txt\")",
+      "Bash(netstat -ano)"
     ]
   }
 }
